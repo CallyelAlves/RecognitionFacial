@@ -7,6 +7,7 @@ import android.hardware.camera2.params.Face;
 import android.os.Environment;
 import android.util.Log;
 import android.util.SparseArray;
+import android.util.Base64;
 
 import com.app.facesample.util.MatchingServiceResluts;
 import com.app.facesample.util.AuthenticationError;

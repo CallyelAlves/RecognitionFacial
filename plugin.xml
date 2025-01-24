@@ -9,8 +9,8 @@
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />
 
-    <js-module src="www/megaMatcherPlugin.js" name="MegaMatcherPlugin">
-        <clobbers target="megaMatcherPlugin" />
+    <js-module src="www/recognitionFacial.js" name="RecognitionFacial">
+        <clobbers target="recognitionFacial" />
     </js-module>
     
     <platform name="android">
