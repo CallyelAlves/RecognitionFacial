@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.app.recognition" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>RecognitionFacial</name>
+    <description>Sample Apache Cordova App</description>
+    <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
+        Apache Cordova Team
+    </author>
+    <content src="index.html" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+
+    <js-module src="www/megaMatcherPlugin.js" name="MegaMatcherPlugin">
+        <clobbers target="megaMatcherPlugin" />
+    </js-module>
+    
+    <platform name="android">
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="MegaMatcherPlugin">
+                <param name="android-package" value="com.neurotec.tutorials.megamatcherid.MegaMatcherPlugin" />
+            </feature>
+        </config-file>
+        <source-file src="src/android/MegaMatcherPlugin.java" target-dir="src/com/neurotec/tutorials/megamatcherid"/>
+        <!-- <source-file src="src/android/src/main/java/com/neurotec/tutorials/megamatcherid/FaceChecks.java" target-dir="src/com/neurotec/tutorials/megamatcherid"/> -->
+        <source-file src="src/android/src/main/java/com/neurotec/tutorials/megamatcherid/FaceChecksFromImage.java" target-dir="src/com/neurotec/tutorials/megamatcherid"/>
+        <source-file src="src/android/src/main/java/com/neurotec/tutorials/utils/BaseActivity.java" target-dir="src/com/neurotec/tutorials/utils"/>
+        <source-file src="src/android/src/main/java/com/neurotec/tutorials/utils/ToastManager.java" target-dir="src/com/neurotec/tutorials/utils"/>
+        <source-file src="Bin/Android/neurotec-mega-matcher-id-client-android.jar" target-dir="libs/" />
+        <source-file src="Bin/Android/mega-matcher-id-rest-client.jar" target-dir="libs/" />
+
+        <source-file src="assets/data/MegaMatcherIdFaces.ndf" target-dir="src/main/assets/MegaMatcherIdFaces.ndf" />
+        <source-file src="assets/data/MegaMatcherIdFacesIcao.ndf" target-dir="src/main/assets/MegaMatcherIdFacesIcao.ndf" />
+
+        <lib-file src="Bin/Android/neurotec-mega-matcher-id-client-android.jar" />
+        <lib-file src="Bin/Android/mega-matcher-id-rest-client.jar" />
+    </platform>
+    <platform name="ios">
+        <source-file src="src/ios/MegaMatcherPlugin.swift" />
+    </platform>
+</widget>
