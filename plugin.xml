@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.app.recognition" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>RecognitionFacial</name>
+    <description>Sample Apache Cordova App</description>
+    <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
+        Apache Cordova Team
+    </author>
+    <content src="index.html" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+
+    <js-module src="www/megaMatcherPlugin.js" name="MegaMatcherPlugin">
+        <clobbers target="megaMatcherPlugin" />
+    </js-module>
+    
+    <platform name="android">
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="RecognitionFacial">
+                <param name="android-package" value="com.app.recognition.RecognitionFacial" />
+            </feature>
+        </config-file>
+        <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice"/>
+        <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice"/>
+        <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice"/>
+
+        <lib-file src="bin/android/neurotec-biometrics-android.jar" />
+        <lib-file src="bin/android/neurotec-biometrics-client-android.jar" />
+        <lib-file src="bin/android/neurotec-media-android.jar" />
+        <lib-file src="bin/android/neurotec-core-android.jar" />
+    </platform>
+    <platform name="ios">
+        <source-file src="src/ios/MegaMatcherPlugin.swift" />
+    </platform>
+</widget>
