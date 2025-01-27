@@ -19,6 +19,7 @@
                 <param name="android-package" value="com.app.recognition.RecognitionFacial" />
             </feature>
         </config-file>
+        <source-file src="src/android/RecognitionFacial.java" target-dir="src/com/app/recognition/matchingservice"/>
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice"/>
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice"/>
         <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice"/>

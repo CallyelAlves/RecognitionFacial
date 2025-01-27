@@ -3,7 +3,7 @@ var recognitionFacial = {
         cordova.exec(successCallback, errorCallback, "RecognitionFacial", "enrollFromBase64", [personId, image]);
     },
     initialize: function(successCallback, errorCallback) {
-        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "initialize", [e]);
+        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "initialize", []);
     }
 };
 
