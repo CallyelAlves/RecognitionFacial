@@ -1,4 +1,4 @@
-package com.app.recognition;
+package com.app.recognition.matchingservice;
 
 import com.app.facesample.service.MatchingService;
 
@@ -15,17 +15,20 @@ public class RecognitionFacial extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
         if (action.equals("initialize")) {
-            MatchingService.initializeMatchingClient();
+            MatchingService.initializeMatchingClient(callbackContext);
             callbackContext.success("Matching Client Initialized");
             return true;
         }
 
         if (action.equals("enrollFromBase64")) {
             try {
+                callbackContext.success("enrollFromBase64 0");
                 String personId = args.getString(0); // Primeiro argumento
                 String base64Image = args.getString(1); // Segundo argumento
                 
-                boolean success = MatchingService.enrollFromBase64(personId, base64Image);
+                boolean success = MatchingService.enrollFromBase64(personId, base64Image, callbackContext);
+                callbackContext.success("enrollFromBase64 1");
+                callbackContext.success(String.valueOf(success));
                 if (success) {
                     callbackContext.success("Enrollment successful");
                 } else {

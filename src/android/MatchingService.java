@@ -35,22 +35,25 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.cordova.CallbackContext;
+
 public class MatchingService {
     private static final String LOG_TAG = MatchingService.class.getSimpleName();
     private static NBiometricClient engine;
     private static final int ENROLLMENT_ACCURACY = 90;
     private static final int SKIP_BLUR_FRAMES = 10;
 
-    public static void initializeMatchingClient() {
+    public static void initializeMatchingClient(CallbackContext callbackContext) {
         if (engine == null) {
             try {
+                // callbackContext.success("initializeMatchingClient 1");
                 engine = new NBiometricClient();
+                callbackContext.success("initializeMatchingClient 2");
 
                 engine.setDatabaseConnectionToSQLite(NCore.getContext().getFilesDir().getAbsolutePath() + System.getProperty("file.separator") + "BiometricsV50.db");
-
                 NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
                 engine.setCustomDataSchema(nBiographicDataSchema);
-
+                callbackContext.success("Matching Client Initialized");
                 engine.setUseDeviceManager(true);
                 engine.setMatchingWithDetails(true);
                 engine.setFacesCreateThumbnailImage(true);
@@ -61,6 +64,7 @@ public class MatchingService {
                 engine.initialize();
 
             } catch (Exception ex) {
+                callbackContext.error("Error in initializeMatchingClient");
                 Log.e(LOG_TAG, "Failed initialization", ex);
             }
         }
@@ -171,7 +175,7 @@ public class MatchingService {
         return matchingServiceReslutsList;
     }
 
-    public static boolean enrollFromBase64(String personId, String base64Image) {
+    public static boolean enrollFromBase64(String personId, String base64Image, CallbackContext callbackContext) {
         try {
             byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
             
@@ -183,15 +187,15 @@ public class MatchingService {
                 Log.e(LOG_TAG, "Invalid image provided.");
                 return false;
             }
-
+            callbackContext.success("Function enrollFromBase64 1");
             // Cria um sujeito (NSubject) para processar a imagem
             NSubject extractSubject = new NSubject();
             NFace face = engine.detectFaces(image);
-
+            callbackContext.success("Function enrollFromBase64 2");
             if (face != null && face.getObjects().size() > 0) {
                 extractSubject.getFaces().add(face);
                 AuthenticationError result = enrollTemplate(extractSubject, personId, image);
-
+                callbackContext.success("Function enrollFromBase64 3");
                 if (result == AuthenticationError.OK) {
                     Log.i(LOG_TAG, "Enrollment successful for personId: " + personId);
                     return true;
