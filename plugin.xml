@@ -20,11 +20,13 @@
         <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice" />
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
+        <source-file src="jniLibs" target="src/com/app/recognition/jniLibs" />
 
         <lib-file src="bin/android/neurotec-biometrics-android.jar" />
         <lib-file src="bin/android/neurotec-biometrics-client-android.jar" />
         <lib-file src="bin/android/neurotec-media-android.jar" />
         <lib-file src="bin/android/neurotec-core-android.jar" />
+        <lib-file src="bin/android/jna.jar" />
     </platform>
 
     <platform name="ios">
