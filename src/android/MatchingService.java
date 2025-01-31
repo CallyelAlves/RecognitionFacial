@@ -48,12 +48,12 @@ public class MatchingService {
             try {
                 // callbackContext.success("initializeMatchingClient 1");
                 engine = new NBiometricClient();
-                callbackContext.success("initializeMatchingClient 2");
+                // callbackContext.success("initializeMatchingClient 2");
 
                 engine.setDatabaseConnectionToSQLite(NCore.getContext().getFilesDir().getAbsolutePath() + System.getProperty("file.separator") + "BiometricsV50.db");
                 NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
                 engine.setCustomDataSchema(nBiographicDataSchema);
-                callbackContext.success("Matching Client Initialized");
+                
                 engine.setUseDeviceManager(true);
                 engine.setMatchingWithDetails(true);
                 engine.setFacesCreateThumbnailImage(true);
@@ -62,7 +62,7 @@ public class MatchingService {
                 engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
                 engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
                 engine.initialize();
-
+                callbackContext.success("Matching Client Initialized");
             } catch (Exception ex) {
                 callbackContext.error("Error in initializeMatchingClient");
                 Log.e(LOG_TAG, "Failed initialization", ex);

@@ -20,13 +20,20 @@
         <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice" />
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <source-file src="jniLibs" target="src/com/app/recognition/jniLibs" />
+        <resource-file src="jniLibs" target="jniLibs" />
 
         <lib-file src="bin/android/neurotec-biometrics-android.jar" />
         <lib-file src="bin/android/neurotec-biometrics-client-android.jar" />
         <lib-file src="bin/android/neurotec-media-android.jar" />
         <lib-file src="bin/android/neurotec-core-android.jar" />
         <lib-file src="bin/android/jna.jar" />
+        <lib-file src="bin/android/neurotec-devices-android.jar" />
+        <!-- <lib-file src="bin/android/neurotec-gui-android.aar" /> -->
+        <lib-file src="bin/android/neurotec-gui-android.jar" />
+        <lib-file src="bin/android/neurotec-licensing-android.jar" />
+        <!-- <lib-file src="bin/android/neurotec-licensing-android.aar" /> -->
+        <lib-file src="bin/android/neurotec-licensing-gui-android.jar" />
+        <lib-file src="bin/android/neurotec-media-processing-android.jar" />
     </platform>
 
     <platform name="ios">
