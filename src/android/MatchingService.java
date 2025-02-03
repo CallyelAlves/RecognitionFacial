@@ -43,14 +43,19 @@ public class MatchingService {
     private static final int ENROLLMENT_ACCURACY = 90;
     private static final int SKIP_BLUR_FRAMES = 10;
 
-    public static void initializeMatchingClient(CallbackContext callbackContext) {
+   public static void initializeMatchingClient(Context context, CallbackContext callbackContext) {
         if (engine == null) {
             try {
-                // callbackContext.success("initializeMatchingClient 1");
+                if (context == null) {
+                    callbackContext.error("Context is null");
+                    return;
+                }
+                NCore.setContext(context);
                 engine = new NBiometricClient();
-                // callbackContext.success("initializeMatchingClient 2");
 
-                engine.setDatabaseConnectionToSQLite(NCore.getContext().getFilesDir().getAbsolutePath() + System.getProperty("file.separator") + "BiometricsV50.db");
+                String dbPath = context.getFilesDir().getAbsolutePath() + File.separator + "BiometricsV50.db";
+                engine.setDatabaseConnectionToSQLite(dbPath);
+
                 NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
                 engine.setCustomDataSchema(nBiographicDataSchema);
                 
@@ -62,13 +67,15 @@ public class MatchingService {
                 engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
                 engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
                 engine.initialize();
+
                 callbackContext.success("Matching Client Initialized");
             } catch (Exception ex) {
-                callbackContext.error("Error in initializeMatchingClient");
                 Log.e(LOG_TAG, "Failed initialization", ex);
+                callbackContext.error("Error in initializeMatchingClient: " + ex.getMessage());
             }
+        } else {
+            callbackContext.success("Matching Client already initialized");
         }
-        //engine.clear();
     }
 
     public static void reset(){

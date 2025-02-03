@@ -2,20 +2,19 @@ package com.app.recognition.matchingservice;
 
 import com.app.facesample.service.MatchingService;
 
-// import com.neurotec.images.NImage;
-// import com.neurotec.images.NImageFormat;
-// import com.neurotec.biometrics.NSubject;
-
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import android.content.Context;
+
 public class RecognitionFacial extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
         if (action.equals("initialize")) {
-            MatchingService.initializeMatchingClient(callbackContext);
+            Context context = cordova.getActivity().getApplicationContext();
+            MatchingService.initializeMatchingClient(context, callbackContext);
             callbackContext.success("Matching Client Initialized");
             return true;
         }
