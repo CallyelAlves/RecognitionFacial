@@ -5,12 +5,11 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.hardware.camera2.params.Face;
 import android.os.Environment;
+import android.os.AsyncTask;
 import android.util.Log;
 import android.util.SparseArray;
 import android.util.Base64;
 
-import com.app.facesample.util.MatchingServiceResluts;
-import com.app.facesample.util.AuthenticationError;
 import com.neurotec.biometrics.NBiographicDataSchema;
 import com.neurotec.biometrics.NBiometricOperation;
 import com.neurotec.biometrics.NBiometricStatus;
@@ -24,6 +23,8 @@ import com.neurotec.images.NImage;
 import com.neurotec.images.NImageFormat;
 import com.neurotec.io.NBuffer;
 import com.neurotec.lang.NCore;
+import com.neurotec.licensing.NLicenseManager;
+import com.neurotec.licensing.gui.LicensingPreferencesFragment;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -36,29 +37,41 @@ import java.util.List;
 import java.util.UUID;
 
 import org.apache.cordova.CallbackContext;
+import com.app.facesample.util.MatchingServiceResluts;
+import com.app.facesample.util.AuthenticationError;
+import com.app.facesample.licensing.LicensingManager;
+import com.app.facesample.licensing.LicensingState;
 
-public class MatchingService {
+
+public class MatchingService implements LicensingManager.LicensingStateCallback {
     private static final String LOG_TAG = MatchingService.class.getSimpleName();
     private static NBiometricClient engine;
     private static final int ENROLLMENT_ACCURACY = 90;
     private static final int SKIP_BLUR_FRAMES = 10;
 
-   public static void initializeMatchingClient(Context context, CallbackContext callbackContext) {
+//    private static final Context contextLocal;
+
+    public static void initializeLicense(CallbackContext callbackContext, Context context) {
+        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        NCore.setContext(context);
+
+        Log.e(LOG_TAG, "InitializationTask : Before");
+        new InitializationTask(context).execute();
+        Log.e(LOG_TAG, "InitializationTask : After");
+        callbackContext.success("initializeLicense");
+    }
+    public static void initializeMatchingClient(CallbackContext callbackContext, Context context) {
         if (engine == null) {
             try {
-                if (context == null) {
-                    callbackContext.error("Context is null");
-                    return;
-                }
-                NCore.setContext(context);
+
                 engine = new NBiometricClient();
 
-                String dbPath = context.getFilesDir().getAbsolutePath() + File.separator + "BiometricsV50.db";
-                engine.setDatabaseConnectionToSQLite(dbPath);
-
+//                engine.setDatabaseConnectionToSQLite(NCore.getContext().getFilesDir().getAbsolutePath() + System.getProperty("file.separator") + "BiometricsV50.db");
+//                this.context = context;
+                String path = context.getFilesDir().getAbsolutePath() + System.getProperty("file.separator") + "BiometricsV50.db";
+                engine.setDatabaseConnectionToSQLite(path);
                 NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
                 engine.setCustomDataSchema(nBiographicDataSchema);
-                
                 engine.setUseDeviceManager(true);
                 engine.setMatchingWithDetails(true);
                 engine.setFacesCreateThumbnailImage(true);
@@ -68,14 +81,14 @@ public class MatchingService {
                 engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
                 engine.initialize();
 
-                callbackContext.success("Matching Client Initialized");
+                callbackContext.success("initializeMatchingClient");
+
             } catch (Exception ex) {
+                callbackContext.error("initializeMatchingClient");
                 Log.e(LOG_TAG, "Failed initialization", ex);
-                callbackContext.error("Error in initializeMatchingClient: " + ex.getMessage());
             }
-        } else {
-            callbackContext.success("Matching Client already initialized");
         }
+        //engine.clear();
     }
 
     public static void reset(){
@@ -194,7 +207,7 @@ public class MatchingService {
                 Log.e(LOG_TAG, "Invalid image provided.");
                 return false;
             }
-            callbackContext.success("Function enrollFromBase64 1");
+//            callbackContext.success("Function enrollFromBase64 1");
             // Cria um sujeito (NSubject) para processar a imagem
             NSubject extractSubject = new NSubject();
             NFace face = engine.detectFaces(image);
@@ -219,7 +232,6 @@ public class MatchingService {
             return false;
         }
     }
-
 
     public static void populateTemplates() {
         //List<String> imagePaths, MatchingService matchingService
@@ -280,4 +292,164 @@ public class MatchingService {
         }
     }
 
+    public static String[] IdentifyFace(String base64Image, CallbackContext callbackContext){
+        String[] mapPerson = null;
+        NImage image = null;
+        byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
+        image = NImage.fromMemory(new NBuffer(decodedBytes));
+
+        NFace face = null;
+        NSubject extractSubject = new NSubject();
+        if (image != null ) {
+
+            face = engine.detectFaces(image);
+            if (face.getObjects().size() > 0) {
+
+                extractSubject.getFaces().add(face);
+
+                List<MatchingServiceResluts> results = MatchingService.identify(extractSubject);
+
+                if(results.size() > 0) {
+                    if (results.size() == 1)
+                        if (results.get(0).getAuthenticationError() != AuthenticationError.OK) {
+                            if (results.get(0).getAuthenticationError() == AuthenticationError.NO_MATCHING) {
+//                                Toast.makeText(FaceCaptureActivity.this, R.string.no_match_found, Toast.LENGTH_SHORT).show();
+                            } else {
+//                                Toast.makeText(FaceCaptureActivity.this, R.string.unidentified_error, Toast.LENGTH_SHORT).show();
+                            }
+                        }
+                }
+
+                mapPerson = prepareIdentifiedUsers(results);
+            }
+        }
+        return mapPerson;
+
+    }
+
+    private static String[] prepareIdentifiedUsers(List<MatchingServiceResluts> results){
+        ArrayList<String> lista = new ArrayList<String>();
+        if(results.size() > 0){
+            for(MatchingServiceResluts matchingServiceResluts : results){
+                if(matchingServiceResluts.getAuthenticationError()!= null){
+                    if(matchingServiceResluts.getAuthenticationError() == AuthenticationError.OK){
+                        lista.add(matchingServiceResluts.getPersonId());
+//                        imageList.add(matchingServiceResluts.geEnroledImage());
+                    }
+                }
+            }
+        }
+        return lista.toArray(new String[0]);
+    }
+
+    @Override
+    public void onLicensingStateChanged(LicensingState state) {
+        switch (state) {
+            case OBTAINING:
+//                showProgress(R.string.msg_obtaining_licenses);
+                Log.i(LOG_TAG, "Obtaining licenses");
+                break;
+            case OBTAINED:
+//                hideProgress();
+//                showToast(R.string.msg_licenses_obtained);
+                Log.i(LOG_TAG, "Licenses were obtained");
+                break;
+            case NOT_OBTAINED:
+//                hideProgress();
+//                showToast(R.string.msg_licenses_not_obtained);
+                Log.i(LOG_TAG, "Licenses were not obtained");
+                break;
+        }
+    }
+
+    final static class InitializationTask extends AsyncTask<Object, Integer, Boolean> {
+
+        private static final int OBTAINING_LICENSE = 2;
+        private static final int PREPARE_DATA_FILES = 3;
+        private static final int Initializing_BIOMETRIC_CLIENT = 4;
+
+        private boolean isLicenseObtained= false;
+        private Context activityConext;
+
+        public InitializationTask(Context context){
+            activityConext = context;
+        }
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+
+        @Override
+        protected Boolean doInBackground(Object... params) {
+            Log.e(LOG_TAG, "InitializationTask : doInBackground");
+            publishProgress(OBTAINING_LICENSE);
+            try {
+                isLicenseObtained  = LicensingManager.getInstance().obtainComponents(this.activityConext);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage());
+//                showError(e.getMessage(), false);
+//                showToast(e.getMessage());
+
+            }
+            Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
+
+            if (isLicenseObtained){
+                Log.i(LOG_TAG, "Licenses were obtained 1");
+            }else{
+                Log.i(LOG_TAG, "Licenses were not obtained 1");
+            }
+
+//            publishProgress(Initializing_BIOMETRIC_CLIENT);
+//            MatchingService.initializeMatchingClient();
+
+            return true;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            super.onProgressUpdate(values);
+            switch (values[0]) {
+                case PREPARE_DATA_FILES:
+//                    showProgress(R.string.prepare_data_files);
+                    Log.i(LOG_TAG, "Preparing data files...");
+                    break;
+                case OBTAINING_LICENSE:
+//                    showProgress(R.string.msg_obtaining_licenses);
+                    Log.i(LOG_TAG, "Obtaining licenses...");
+                    break;
+                case Initializing_BIOMETRIC_CLIENT:
+//                    showProgress(R.string.initializing_biometric_client);
+                    Log.i(LOG_TAG, "Initializing biometric client");
+                    break;
+            }
+        }
+
+//        @Override
+//        protected void onPostExecute(Boolean result) {
+//            super.onPostExecute(result);
+//            hideProgress();
+//            if(isLicenseObtained){
+//                btnEnroll.setEnabled(true);
+//                btnEnrollBase.setEnabled(true);
+//                btnIdentify.setEnabled(true);
+//                btnCleanDB.setEnabled(true);
+//            }else{
+//                btnEnroll.setEnabled(false);
+//                btnEnrollBase.setEnabled(false);
+//                btnIdentify.setEnabled(false);
+//                btnCleanDB.setEnabled(false);
+//            }
+//
+//        }
+    }
+
+//    @Override
+    public void onBackPressed() {
+        Log.e(LOG_TAG, "before onBackPressed : License status -  " +  LicensingManager.getInstance().isLicensesObtained());
+        LicensingManager.getInstance().release();
+        Log.e(LOG_TAG, "after onBackPressed : License status -  " +  LicensingManager.getInstance().isLicensesObtained());
+//        finish();
+    }
 }

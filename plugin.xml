@@ -20,21 +20,27 @@
         <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice" />
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <resource-file src="jniLibs" target="jniLibs" />
+        <source-file src="src/licensing/LicensingManager.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
+        <source-file src="src/licensing/LicensingState.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
 
-        <lib-file src="bin/android/jna.jar" />
+        <resource-file src="jniLibs" target="jniLibs" />
+        <resource-file src="data" target="assets/data" />
+
         <lib-file src="bin/android/neurotec-biometrics-android.jar" />
         <lib-file src="bin/android/neurotec-biometrics-client-android.jar" />
+        <lib-file src="bin/android/neurotec-media-android.jar" />
         <lib-file src="bin/android/neurotec-core-android.jar" />
+        <lib-file src="bin/android/jna.jar" />
+
         <lib-file src="bin/android/neurotec-devices-android.jar" />
         <lib-file src="bin/android/neurotec-gui-android.jar" />
         <lib-file src="bin/android/neurotec-licensing-android.jar" />
         <lib-file src="bin/android/neurotec-licensing-gui-android.jar" />
-        <lib-file src="bin/android/neurotec-media-android.jar" />
         <lib-file src="bin/android/neurotec-media-processing-android.jar" />
 
-        <!-- <framework src="bin/android/neurotec-gui-android.aar" custom="true" />
-        <framework src="bin/android/neurotec-licensing-android.aar" custom="true" /> -->
+        <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+        <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
     </platform>
 
     <platform name="ios">
