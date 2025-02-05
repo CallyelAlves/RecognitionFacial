@@ -12,6 +12,11 @@ import android.content.Context;
 public class RecognitionFacial extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
+        if (action.equals("initializeLicense")) {
+            MatchingService.initializeLicense(callbackContext, this.context);
+//            callbackContext.success("Matching Client Initialized");
+            return true;
+        }
         if (action.equals("initialize")) {
             Context context = cordova.getActivity().getApplicationContext();
             MatchingService.initializeMatchingClient(context, callbackContext);

@@ -36,6 +36,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.apache.cordova.CallbackContext;
+import com.app.facesample.licensing.LicensingManager;
+import com.app.facesample.licensing.LicensingState;
 
 public class MatchingService {
     private static final String LOG_TAG = MatchingService.class.getSimpleName();
@@ -58,7 +60,7 @@ public class MatchingService {
 
                 NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
                 engine.setCustomDataSchema(nBiographicDataSchema);
-                
+
                 engine.setUseDeviceManager(true);
                 engine.setMatchingWithDetails(true);
                 engine.setFacesCreateThumbnailImage(true);
@@ -280,4 +282,84 @@ public class MatchingService {
         }
     }
 
+    public static void initializeLicense(CallbackContext callbackContext, Context context) {
+        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        NCore.setContext(context);
+
+        Log.e(LOG_TAG, "InitializationTask : Before");
+        new InitializationTask(context).execute();
+        Log.e(LOG_TAG, "InitializationTask : After");
+        callbackContext.success("initializeLicense");
+    }
+
+    @Override
+    public void onLicensingStateChanged(LicensingState state) {
+        switch (state) {
+            case OBTAINING:
+                Log.i(LOG_TAG, "Obtaining licenses");
+                break;
+            case OBTAINED:
+                Log.i(LOG_TAG, "Licenses were obtained");
+                break;
+            case NOT_OBTAINED:
+                Log.i(LOG_TAG, "Licenses were not obtained");
+                break;
+        }
+    }
+
+    final static class InitializationTask extends AsyncTask<Object, Integer, Boolean> {
+
+        private static final int OBTAINING_LICENSE = 2;
+        private static final int PREPARE_DATA_FILES = 3;
+        private static final int Initializing_BIOMETRIC_CLIENT = 4;
+
+        private boolean isLicenseObtained= false;
+        private Context activityConext;
+
+        public InitializationTask(Context context){
+            activityConext = context;
+        }
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+
+        @Override
+        protected Boolean doInBackground(Object... params) {
+            Log.e(LOG_TAG, "InitializationTask : doInBackground");
+            publishProgress(OBTAINING_LICENSE);
+            try {
+                isLicenseObtained  = LicensingManager.getInstance().obtainComponents(this.activityConext);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage());
+            }
+            Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
+
+            if (isLicenseObtained){
+                Log.i(LOG_TAG, "Licenses were obtained 1");
+            }else{
+                Log.i(LOG_TAG, "Licenses were not obtained 1");
+            }
+            return true;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            super.onProgressUpdate(values);
+            switch (values[0]) {
+                case PREPARE_DATA_FILES:
+                    Log.i(LOG_TAG, "Preparing data files...");
+                    break;
+                case OBTAINING_LICENSE:
+                    Log.i(LOG_TAG, "Obtaining licenses...");
+                    break;
+                case Initializing_BIOMETRIC_CLIENT:
+                    Log.i(LOG_TAG, "Initializing biometric client");
+                    break;
+            }
+        }
+
+    }
 }
