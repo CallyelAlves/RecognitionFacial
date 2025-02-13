@@ -52,14 +52,24 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
 //    private static final Context contextLocal;
 
     public static void initializeLicense(CallbackContext callbackContext, Context context) {
-        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
-        NCore.setContext(context);
-
+        // NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+    
         Log.e(LOG_TAG, "InitializationTask : Before");
         new InitializationTask(context).execute();
         Log.e(LOG_TAG, "InitializationTask : After");
         callbackContext.success("initializeLicense");
     }
+
+    public static boolean isLicensesObtained(Context context) {
+        try {
+            NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "License already initiated, skipping setTrialMode.", e);
+        }
+        NCore.setContext(context);
+        return LicensingManager.isLicensesObtained();
+    }
+
     public static void initializeMatchingClient(CallbackContext callbackContext, Context context) {
         if (engine == null) {
             try {
@@ -207,17 +217,17 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                 Log.e(LOG_TAG, "Invalid image provided.");
                 return false;
             }
-//            callbackContext.success("Function enrollFromBase64 1");
             // Cria um sujeito (NSubject) para processar a imagem
             NSubject extractSubject = new NSubject();
             NFace face = engine.detectFaces(image);
-            callbackContext.success("Function enrollFromBase64 2");
+
             if (face != null && face.getObjects().size() > 0) {
                 extractSubject.getFaces().add(face);
                 AuthenticationError result = enrollTemplate(extractSubject, personId, image);
-                callbackContext.success("Function enrollFromBase64 3");
+                
                 if (result == AuthenticationError.OK) {
                     Log.i(LOG_TAG, "Enrollment successful for personId: " + personId);
+                    callbackContext.success("Enrollment successful");
                     return true;
                 } else {
                     Log.e(LOG_TAG, "Enrollment failed with error: " + result);
@@ -425,24 +435,6 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                     break;
             }
         }
-
-//        @Override
-//        protected void onPostExecute(Boolean result) {
-//            super.onPostExecute(result);
-//            hideProgress();
-//            if(isLicenseObtained){
-//                btnEnroll.setEnabled(true);
-//                btnEnrollBase.setEnabled(true);
-//                btnIdentify.setEnabled(true);
-//                btnCleanDB.setEnabled(true);
-//            }else{
-//                btnEnroll.setEnabled(false);
-//                btnEnrollBase.setEnabled(false);
-//                btnIdentify.setEnabled(false);
-//                btnCleanDB.setEnabled(false);
-//            }
-//
-//        }
     }
 
 //    @Override

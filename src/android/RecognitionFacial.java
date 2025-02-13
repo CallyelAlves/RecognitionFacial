@@ -22,26 +22,24 @@ public class RecognitionFacial extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
         if (action.equals("initialize")) {
-            MatchingService.initializeLicense(callbackContext, this.context);
-//            callbackContext.success("Matching Client Initialized");
+            if (!MatchingService.isLicensesObtained(this.context)) {
+                MatchingService.initializeLicense(callbackContext, this.context);
+            }
             return true;
         }
 
         if (action.equals("initializeMatchingClient")) {
             MatchingService.initializeMatchingClient(callbackContext, this.context);
-//            callbackContext.success("Matching Client Initialized");
             return true;
         }
 
         if (action.equals("enrollFromBase64")) {
             try {
-//                callbackContext.success("enrollFromBase64 0");
-                String personId = args.getString(0); // Primeiro argumento
-                String base64Image = args.getString(1); // Segundo argumento
+                String personId = args.getString(0);
+                String base64Image = args.getString(1);
                 
                 boolean success = MatchingService.enrollFromBase64(personId, base64Image, callbackContext);
-//                callbackContext.success("enrollFromBase64 1");
-//                callbackContext.success(String.valueOf(success));
+
                 if (success) {
                     callbackContext.success("Enrollment successful");
                 } else {
@@ -56,69 +54,17 @@ public class RecognitionFacial extends CordovaPlugin {
 
         if (action.equals("identifyBase64")) {
             try {
-//                callbackContext.success("enrollFromBase64 0");
-                String base64Image = args.getString(0); // Segundo argumento
+                String base64Image = args.getString(0);
 
                 String[] success = MatchingService.IdentifyFace(base64Image, callbackContext);
 
-//                callbackContext.success("enrollFromBase64 1");
-//                callbackContext.success(String.valueOf(success));
-//                if (success.length() > 0) {
-                    callbackContext.success(String.join(", ", success));
-//                } else {
-//                    callbackContext.error("Enrollment failed");
-//                }
+                callbackContext.success(String.join(", ", success));
                 return true;
             } catch (Exception e) {
                 callbackContext.error("Error in identifyBase64: " + e.getMessage());
                 return false;
             }
         }
-
-        // if (action.equals("enrollTemplate")) {
-        //     try {
-        //         String personId = args.getString(0);
-        //         String imagePath = args.getString(1);
-                
-        //         // Carregue a imagem e crie o objeto NSubject
-        //         NImage image = NImage.fromFile(imagePath);
-        //         NSubject subject = new NSubject();
-                
-        //         AuthenticationError result = MatchingService.enrollTemplate(subject, personId, image);
-        //         if (result == AuthenticationError.OK) {
-        //             callbackContext.success("Enrollment successful");
-        //         } else {
-        //             callbackContext.error("Enrollment failed: " + result.toString());
-        //         }
-        //         return true;
-        //     } catch (Exception e) {
-        //         callbackContext.error("Error enrolling template: " + e.getMessage());
-        //         return false;
-        //     }
-        // }
-
-        // if (action.equals("identify")) {
-        //     try {
-        //         String imagePath = args.getString(0);
-        //         NImage image = NImage.fromFile(imagePath);
-        //         NSubject subject = new NSubject();
-        //         subject.setTemplate(image);
-
-        //         List<MatchingServiceResluts> results = MatchingService.identify(subject);
-        //         JSONArray jsonResults = new JSONArray();
-        //         for (MatchingServiceResluts result : results) {
-        //             JSONObject obj = new JSONObject();
-        //             obj.put("personId", result.getPersonId());
-        //             // Adicione outros campos necessários
-        //             jsonResults.put(obj);
-        //         }
-        //         callbackContext.success(jsonResults);
-        //         return true;
-        //     } catch (Exception e) {
-        //         callbackContext.error("Error identifying: " + e.getMessage());
-        //         return false;
-        //     }
-        // }
 
         return false;
     }
