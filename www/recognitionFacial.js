@@ -15,6 +15,10 @@ var recognitionFacial = {
         console.log("Calling identifyBase64 with image.");
         cordova.exec(successCallback, errorCallback, "RecognitionFacial", "identifyBase64", [image]);
     },
+    startCamera: function(successCallback, errorCallback) {
+        console.log("Calling startCamera with image.");
+        cordova.exec(successCallback, errorCallback, 'RecognitionFacial', 'startCamera', []);
+    }
 };
 
 module.exports = recognitionFacial;

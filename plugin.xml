@@ -15,18 +15,16 @@
                 <param name="android-package" value="com.app.recognition.matchingservice.RecognitionFacial" />
             </feature>
         </config-file>
-        <!-- Comentado porque o cordova-plugin-file já executa esta ação -->
-        <!-- <edit-config file="app/src/main/AndroidManifest.xml" mode="merge" target="/manifest/application">
-            <application android:extractNativeLibs="true" />
-            <application android:allowNativeHeapPointerTagging="false" />
-        </edit-config> -->
 
         <source-file src="src/android/RecognitionFacial.java" target-dir="src/com/app/recognition/matchingservice" />
         <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice" />
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
+        <source-file src="src/utils/AutoFitTextureView.java" target-dir="src/com/app/recognition/matchingservice/utils" />
+        <source-file src="src/helpers/FaceFrame.java" target-dir="src/com/app/recognition/matchingservice/helpers" />
         <source-file src="src/licensing/LicensingManager.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
         <source-file src="src/licensing/LicensingState.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
+        <source-file src="src/android/activity_main.xml" target-dir="res/layout" />
 
         <resource-file src="jniLibs" target="jniLibs" />
         <resource-file src="data" target="assets/data" />
