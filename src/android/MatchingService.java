@@ -72,7 +72,7 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
 
     private static final String LOG_TAG = MatchingService.class.getSimpleName();
     private static NBiometricClient engine;
-    private static final int ENROLLMENT_ACCURACY = 90;
+    private static final int ENROLLMENT_ACCURACY = 85;
 
     private final Object captureLock = new Object();
     private List<FaceFrame> mImageQueue = new ArrayList<>();
@@ -470,35 +470,37 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                     return;
                 }
 
-                Bitmap bitmap = textureView.getBitmap(textureView.getWidth(), textureView.getHeight());
+                int captureWidth = textureView.getWidth();
+                int captureHeight = textureView.getHeight();
+                Bitmap bitmap = textureView.getBitmap(captureWidth, captureHeight);
                 if (bitmap == null) {
                     Log.e("Camera", "Erro: Bitmap nulo.");
                     return;
                 }
 
                 try {
-                    Bitmap rgbBitmap = bitmap.copy(Bitmap.Config.RGB_565, false);
+                    Bitmap rgbBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
                     if (rgbBitmap == null) {
                         Log.e("Camera", "Erro ao copiar Bitmap.");
                         return;
                     }
                     bitmap.recycle();
-                    byte[] yuvData = convertBitmapToJPEG(rgbBitmap);
-                    if (yuvData == null || yuvData.length == 0) {
-                        Log.e("Camera", "Erro: Buffer YUV vazio.");
+
+                    byte[] jpegData = convertBitmapToHighQualityJPEG(rgbBitmap);
+                    if (jpegData == null || jpegData.length == 0) {
+                        Log.e("Camera", "Erro: Buffer JPEG vazio.");
                         return;
                     }
 
                     int width = rgbBitmap.getWidth();
                     int height = rgbBitmap.getHeight();
-                    FaceFrame faceFrame = new FaceFrame(yuvData, null, null, width, height, width, 0, 0, 0, 0, 0, 0);
-
+                    FaceFrame faceFrame = new FaceFrame(jpegData, null, null, width, height, width, 0, 0, 0, 0, 0, 0);
                     synchronized (captureLock) {
                         mImageQueue.add(faceFrame);
                         captureLock.notify();
                     }
                 } catch (Exception e) {
-                    Log.e("Camera", "Erro ao converter Bitmap", e);
+                    Log.e("Camera", "Erro ao processar frame", e);
                 } finally {
                     if (bitmap != null && !bitmap.isRecycled()) {
                         bitmap.recycle();
@@ -506,6 +508,18 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                 }
             }
         });
+    }
+
+    // Conversão para JPEG com alta qualidade
+    private byte[] convertBitmapToHighQualityJPEG(Bitmap bitmap) {
+        try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
+            // Ajuste o valor de qualidade (0-100), ex: 90
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream);
+            return stream.toByteArray();
+        } catch (IOException e) {
+            Log.e("Camera", "Erro ao converter bitmap para JPEG", e);
+            return null;
+        }
     }
 
     public void processCameraFrames(CallbackContext callback, Context context, Activity activity, AutoFitTextureView textureView, WebView webView) {
