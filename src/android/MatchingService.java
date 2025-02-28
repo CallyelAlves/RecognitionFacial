@@ -41,7 +41,7 @@ import com.app.facesample.util.MatchingServiceResluts;
 import com.app.facesample.util.AuthenticationError;
 import com.app.facesample.licensing.LicensingManager;
 import com.app.facesample.licensing.LicensingState;
-import com.exemplo.apppontoteste.R;
+import br.com.nasajon.pontomobile.R;
 import com.app.recognition.matchingservice.utils.AutoFitTextureView;
 
 import android.os.Handler;

@@ -12,7 +12,7 @@ import android.util.Log;
 import com.app.recognition.matchingservice.utils.AutoFitTextureView;
 import android.os.Handler;
 import android.os.HandlerThread;
-import com.exemplo.apppontoteste.R;
+import br.com.nasajon.pontomobile.R;
 import android.graphics.SurfaceTexture;
 import android.view.TextureView;
 import android.view.LayoutInflater;
