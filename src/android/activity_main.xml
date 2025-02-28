@@ -6,5 +6,6 @@
     <com.app.recognition.matchingservice.utils.AutoFitTextureView
         android:id="@+id/texture_view"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 </FrameLayout>
