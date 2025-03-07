@@ -13,6 +13,7 @@ import com.neurotec.biometrics.NBiometricOperation;
 import com.neurotec.biometrics.NBiometricStatus;
 import com.neurotec.biometrics.NBiometricTask;
 import com.neurotec.biometrics.NFace;
+import com.neurotec.biometrics.NLAttributes;
 import com.neurotec.biometrics.NMatchingResult;
 import com.neurotec.biometrics.NSubject;
 import com.neurotec.biometrics.NTemplateSize;
@@ -41,7 +42,7 @@ import com.app.facesample.util.MatchingServiceResluts;
 import com.app.facesample.util.AuthenticationError;
 import com.app.facesample.licensing.LicensingManager;
 import com.app.facesample.licensing.LicensingState;
-import br.com.nasajon.pontomobile.R;
+import com.exemplo.apppontoteste.R;
 import com.app.recognition.matchingservice.utils.AutoFitTextureView;
 
 import android.os.Handler;
@@ -67,12 +68,17 @@ import android.view.TextureView;
 import android.app.Activity;
 import android.view.ViewGroup;
 import android.webkit.WebView;
+import android.graphics.RectF;
+import android.graphics.Rect;
+
+import com.app.recognition.matchingservice.utils.FaceOverlayView;
+
 
 public class MatchingService implements LicensingManager.LicensingStateCallback {
 
     private static final String LOG_TAG = MatchingService.class.getSimpleName();
     private static NBiometricClient engine;
-    private static final int ENROLLMENT_ACCURACY = 85;
+    private static final int ENROLLMENT_ACCURACY = 90;
 
     private final Object captureLock = new Object();
     private List<FaceFrame> mImageQueue = new ArrayList<>();
@@ -522,7 +528,7 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
         }
     }
 
-    public void processCameraFrames(CallbackContext callback, Context context, Activity activity, AutoFitTextureView textureView, WebView webView) {
+    public void processCameraFrames(CallbackContext callback, Context context, Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
         new Thread(() -> {
             while (isProcessingFrames) {
                 if (engine == null) {
@@ -596,7 +602,9 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                                             }
                                             ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
                                             rootView.removeView(textureView);
+                                            rootView.removeView(faceOverlayView);
                                         }
+                                        faceOverlayView.setVisibility(View.GONE);
                                     } catch (Exception e) {
                                         Log.e("CameraError", "Erro ao fechar câmera", e);
                                     }
@@ -696,5 +704,18 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
             Log.e(LOG_TAG, "Erro ao converter imagem para base64", e);
             return null;
         }
+    }
+    private RectF transformCoordinates(Rect faceBounds,
+                                       int imageWidth, int imageHeight,
+                                       int viewWidth, int viewHeight) {
+        float xScale = (float) viewWidth / (float) imageWidth;
+        float yScale = (float) viewHeight / (float) imageHeight;
+
+        float left   = faceBounds.left * xScale;
+        float top    = faceBounds.top * yScale;
+        float right  = faceBounds.right * xScale;
+        float bottom = faceBounds.bottom * yScale;
+
+        return new RectF(left, top, right, bottom);
     }
 }

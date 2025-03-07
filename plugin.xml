@@ -21,6 +21,7 @@
         <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/utils/AutoFitTextureView.java" target-dir="src/com/app/recognition/matchingservice/utils" />
+        <source-file src="src/utils/FaceOverlayView.java" target-dir="src/com/app/recognition/matchingservice/utils" />
         <source-file src="src/helpers/FaceFrame.java" target-dir="src/com/app/recognition/matchingservice/helpers" />
         <source-file src="src/licensing/LicensingManager.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
         <source-file src="src/licensing/LicensingState.java" target-dir="src/com/app/recognition/matchingservice/licensing" />

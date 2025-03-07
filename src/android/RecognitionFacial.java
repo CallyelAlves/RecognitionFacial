@@ -12,7 +12,7 @@ import android.util.Log;
 import com.app.recognition.matchingservice.utils.AutoFitTextureView;
 import android.os.Handler;
 import android.os.HandlerThread;
-import br.com.nasajon.pontomobile.R;
+import com.exemplo.apppontoteste.R;
 import android.graphics.SurfaceTexture;
 import android.view.TextureView;
 import android.view.LayoutInflater;
@@ -21,11 +21,14 @@ import com.neurotec.util.concurrent.CompletionHandler;
 import com.neurotec.biometrics.NBiometricTask;
 import com.neurotec.biometrics.NBiometricOperation;
 import android.view.ViewGroup;
+import com.app.recognition.matchingservice.FaceOverlayView;
+import android.graphics.RectF;
 
 public class RecognitionFacial extends CordovaPlugin implements TextureView.SurfaceTextureListener {
     private CallbackContext callbackContext;
     private Context context;
     private AutoFitTextureView textureView;
+    private FaceOverlayView faceOverlayView;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
     private Activity activity;
@@ -96,6 +99,20 @@ public class RecognitionFacial extends CordovaPlugin implements TextureView.Surf
                 View view = inflater.inflate(R.layout.activity_main, container, false);
                 container.addView(view);
                 textureView = view.findViewById(R.id.texture_view);
+                faceOverlayView = view.findViewById(R.id.face_overlay);
+
+                int screenWidth = view.getResources().getDisplayMetrics().widthPixels;
+                int screenHeight = view.getResources().getDisplayMetrics().heightPixels;
+
+                float ovalWidth = screenWidth * 0.7f; // 70% da largura da tela
+                float ovalHeight = ovalWidth * 1.8f; // Proporção 1:1.8
+
+                float left = (screenWidth - ovalWidth) / 2;
+                float top = (screenHeight - ovalHeight) / 2;
+                float right = left + ovalWidth;
+                float bottom = top + ovalHeight;
+                RectF ovalRect = new RectF(left, top, right, bottom);
+
                 if (textureView == null) {
                     Log.e("CameraError", "textureView está NULL após inflar manualmente");
                     callbackContext.error("textureView está NULL após inflar manualmente");
@@ -103,6 +120,9 @@ public class RecognitionFacial extends CordovaPlugin implements TextureView.Surf
                 }
                 textureView.setVisibility(View.VISIBLE);
                 startBackgroundThread();
+
+                faceOverlayView.setOvalRect(ovalRect);
+
                 textureView.setSurfaceTextureListener(RecognitionFacial.this);
             } catch (Exception e) {
                 Log.e("CameraError", "Erro ao iniciar câmera", e);
@@ -127,7 +147,7 @@ public class RecognitionFacial extends CordovaPlugin implements TextureView.Surf
         matchingService.startFrameProcessing(textureView);
         matchingService.openCamera(cordova.getActivity().getApplicationContext(), textureView, backgroundHandler);
         // Caso não utilize uma WebView específica, pode passar null
-        matchingService.processCameraFrames(this.callbackContext, this.context, this.activity, textureView, null);
+        matchingService.processCameraFrames(this.callbackContext, this.context, this.activity, textureView, faceOverlayView);
     }
 
     @Override
