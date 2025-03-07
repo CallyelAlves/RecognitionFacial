@@ -146,13 +146,13 @@ public class RecognitionFacial extends CordovaPlugin implements TextureView.Surf
         });
         matchingService.startFrameProcessing(textureView);
         matchingService.openCamera(cordova.getActivity().getApplicationContext(), textureView, backgroundHandler);
-        // Caso não utilize uma WebView específica, pode passar null
+
         matchingService.processCameraFrames(this.callbackContext, this.context, this.activity, textureView, faceOverlayView);
     }
 
     @Override
     public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-        // Lógica para lidar com mudanças de tamanho
+
     }
 
     @Override
