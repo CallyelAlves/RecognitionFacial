@@ -7,10 +7,14 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
+import android.graphics.Path;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.PorterDuff;
 
 public class FaceOverlayView extends View {
     private Paint paint;
     private RectF ovalRect;
+    private Path path;
 
     public FaceOverlayView(Context context) {
         super(context);
@@ -27,12 +31,16 @@ public class FaceOverlayView extends View {
         init();
     }
 
+    public RectF getOvalRect() {
+        return ovalRect;
+    }
+
     private void init() {
         paint = new Paint();
         paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(5f);
+        paint.setStyle(Paint.Style.FILL);
         paint.setAntiAlias(true);
+        path = new Path();
     }
 
     public void setOvalRect(RectF rect) {
@@ -44,7 +52,11 @@ public class FaceOverlayView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (ovalRect != null) {
-            canvas.drawOval(ovalRect, paint);
+            path.reset();
+            path.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
+            path.addOval(ovalRect, Path.Direction.CCW);
+
+            canvas.drawPath(path, paint);
         }
     }
 }

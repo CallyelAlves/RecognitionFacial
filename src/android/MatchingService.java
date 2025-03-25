@@ -71,6 +71,12 @@ import android.webkit.WebView;
 import android.graphics.RectF;
 import android.graphics.Rect;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+
 import com.app.recognition.matchingservice.utils.FaceOverlayView;
 
 
@@ -454,7 +460,7 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
         }
     }
 
-    public void startFrameProcessing(AutoFitTextureView textureView) {
+    public void startFrameProcessing(AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {}
@@ -478,28 +484,33 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
 
                 int captureWidth = textureView.getWidth();
                 int captureHeight = textureView.getHeight();
-                Bitmap bitmap = textureView.getBitmap(captureWidth, captureHeight);
-                if (bitmap == null) {
+                Bitmap fullBitmap = textureView.getBitmap(captureWidth, captureHeight);
+
+                if (fullBitmap == null) {
                     Log.e("Camera", "Erro: Bitmap nulo.");
                     return;
                 }
 
                 try {
-                    Bitmap rgbBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
-                    if (rgbBitmap == null) {
-                        Log.e("Camera", "Erro ao copiar Bitmap.");
+                    RectF ovalBounds = faceOverlayView.getOvalRect();
+                    if (ovalBounds == null) {
+                        Log.e("Camera", "Erro: Oval não definida.");
                         return;
                     }
-                    bitmap.recycle();
 
-                    byte[] jpegData = convertBitmapToHighQualityJPEG(rgbBitmap);
+                    Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
+                    fullBitmap.recycle();
+
+                    byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
+                    croppedBitmap.recycle();
+
                     if (jpegData == null || jpegData.length == 0) {
                         Log.e("Camera", "Erro: Buffer JPEG vazio.");
                         return;
                     }
 
-                    int width = rgbBitmap.getWidth();
-                    int height = rgbBitmap.getHeight();
+                    int width = (int) ovalBounds.width();
+                    int height = (int) ovalBounds.height();
                     FaceFrame faceFrame = new FaceFrame(jpegData, null, null, width, height, width, 0, 0, 0, 0, 0, 0);
                     synchronized (captureLock) {
                         mImageQueue.add(faceFrame);
@@ -507,13 +518,33 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
                     }
                 } catch (Exception e) {
                     Log.e("Camera", "Erro ao processar frame", e);
-                } finally {
-                    if (bitmap != null && !bitmap.isRecycled()) {
-                        bitmap.recycle();
-                    }
                 }
             }
         });
+    }
+
+    private Bitmap cropToOval(Bitmap original, RectF ovalBounds) {
+        Bitmap croppedBitmap = Bitmap.createBitmap(
+                (int) ovalBounds.width(),
+                (int) ovalBounds.height(),
+                Bitmap.Config.ARGB_8888
+        );
+
+        Canvas canvas = new Canvas(croppedBitmap);
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+
+        Path path = new Path();
+        path.addOval(new RectF(0, 0, ovalBounds.width(), ovalBounds.height()), Path.Direction.CCW);
+
+        canvas.drawColor(Color.WHITE);
+
+        canvas.save();
+        canvas.clipPath(path);
+        canvas.drawBitmap(original, -ovalBounds.left, -ovalBounds.top, paint);
+        canvas.restore();
+
+        return croppedBitmap;
     }
 
     // Conversão para JPEG com alta qualidade
@@ -689,12 +720,6 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
         }
     }
 
-    private byte[] convertBitmapToJPEG(Bitmap bitmap) {
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
-        return stream.toByteArray();
-    }
-
     private String convertNImageToBase64(NImage image) {
         try {
             NBuffer buffer = image.save(NImageFormat.getJPEG());
@@ -704,18 +729,5 @@ public class MatchingService implements LicensingManager.LicensingStateCallback 
             Log.e(LOG_TAG, "Erro ao converter imagem para base64", e);
             return null;
         }
-    }
-    private RectF transformCoordinates(Rect faceBounds,
-                                       int imageWidth, int imageHeight,
-                                       int viewWidth, int viewHeight) {
-        float xScale = (float) viewWidth / (float) imageWidth;
-        float yScale = (float) viewHeight / (float) imageHeight;
-
-        float left   = faceBounds.left * xScale;
-        float top    = faceBounds.top * yScale;
-        float right  = faceBounds.right * xScale;
-        float bottom = faceBounds.bottom * yScale;
-
-        return new RectF(left, top, right, bottom);
     }
 }

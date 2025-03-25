@@ -144,7 +144,7 @@ public class RecognitionFacial extends CordovaPlugin implements TextureView.Surf
                 Log.e("MatchingService", "Erro no processamento biométrico", throwable);
             }
         });
-        matchingService.startFrameProcessing(textureView);
+        matchingService.startFrameProcessing(textureView, faceOverlayView);
         matchingService.openCamera(cordova.getActivity().getApplicationContext(), textureView, backgroundHandler);
 
         matchingService.processCameraFrames(this.callbackContext, this.context, this.activity, textureView, faceOverlayView);
