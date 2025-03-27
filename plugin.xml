@@ -1,46 +1,46 @@
-<widget id="com.app.recognition" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>RecognitionFacial</name>
+<widget id="cordova-plugin-neurotechnology" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Neurotechnology</name>
     <description>Facial Recognition Plugin</description>
     <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
         Apache Cordova Team
     </author>
 
-    <js-module src="www/recognitionFacial.js" name="RecognitionFacial">
-        <clobbers target="recognitionFacial" />
+    <js-module src="www/neurotechnology.js" name="Neurotechnology">
+        <clobbers target="neurotechnology" />
     </js-module>
 
     <platform name="android">
         <config-file target="res/xml/config.xml" parent="/*">
-            <feature name="RecognitionFacial">
-                <param name="android-package" value="com.app.recognition.matchingservice.RecognitionFacial" />
+            <feature name="Neurotechnology">
+                <param name="android-package" value="com.cordova.neurotechnology.Neurotechnology" />
             </feature>
         </config-file>
 
-        <source-file src="src/android/RecognitionFacial.java" target-dir="src/com/app/recognition/matchingservice" />
-        <source-file src="src/android/MatchingService.java" target-dir="src/com/app/recognition/matchingservice" />
-        <source-file src="src/utils/MatchingServiceResluts.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <source-file src="src/utils/AuthenticationError.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <source-file src="src/utils/AutoFitTextureView.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <source-file src="src/utils/FaceOverlayView.java" target-dir="src/com/app/recognition/matchingservice/utils" />
-        <source-file src="src/helpers/FaceFrame.java" target-dir="src/com/app/recognition/matchingservice/helpers" />
-        <source-file src="src/licensing/LicensingManager.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
-        <source-file src="src/licensing/LicensingState.java" target-dir="src/com/app/recognition/matchingservice/licensing" />
+        <source-file src="src/android/Neurotechnology.java" target-dir="src/com/cordova/neurotechnology" />
+        <source-file src="src/android/MatchingService.java" target-dir="src/com/cordova/neurotechnology" />
+        <source-file src="src/android/utils/NeurotechnologyServiceResluts.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/AuthenticationError.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/AutoFitTextureView.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/FaceOverlayView.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/helpers/FaceFrame.java" target-dir="src/com/cordova/neurotechnology/helpers" />
+        <source-file src="src/android/licensing/LicensingManager.java" target-dir="src/com/cordova/neurotechnology/licensing" />
+        <source-file src="src/android/licensing/LicensingState.java" target-dir="src/com/cordova/neurotechnology/licensing" />
         <source-file src="src/android/activity_main.xml" target-dir="res/layout" />
 
-        <resource-file src="jniLibs" target="jniLibs" />
-        <resource-file src="data" target="assets/data" />
+        <resource-file src="platforms/android/jniLibs" target="jniLibs" />
+        <resource-file src="platforms/android/data" target="assets/data" />
 
-        <lib-file src="bin/android/neurotec-biometrics-android.jar" />
-        <lib-file src="bin/android/neurotec-biometrics-client-android.jar" />
-        <lib-file src="bin/android/neurotec-media-android.jar" />
-        <lib-file src="bin/android/neurotec-core-android.jar" />
-        <lib-file src="bin/android/jna.jar" />
+        <lib-file src="platforms/android/libs/neurotec-biometrics-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-biometrics-client-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-media-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-core-android.jar" />
+        <lib-file src="platforms/android/libs/jna.jar" />
 
-        <lib-file src="bin/android/neurotec-devices-android.jar" />
-        <lib-file src="bin/android/neurotec-gui-android.jar" />
-        <lib-file src="bin/android/neurotec-licensing-android.jar" />
-        <lib-file src="bin/android/neurotec-licensing-gui-android.jar" />
-        <lib-file src="bin/android/neurotec-media-processing-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-devices-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-gui-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-licensing-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-licensing-gui-android.jar" />
+        <lib-file src="platforms/android/libs/neurotec-media-processing-android.jar" />
 
         <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
         <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -48,6 +48,6 @@
     </platform>
 
     <platform name="ios">
-        <source-file src="src/ios/MegaMatcherPlugin.swift" />
+        <!-- <source-file src="src/ios/MegaMatcherPlugin.swift" /> -->
     </platform>
 </widget>
