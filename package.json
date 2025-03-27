@@ -1,10 +1,10 @@
 {
-  "name": "com.app.recognition",
-  "displayName": "RecognitionFacial",
+  "name": "cordova-plugin-neurotechnology",
+  "displayName": "Neurotechnology",
   "version": "1.0.0",
   "description": "A sample Apache Cordova application that responds to the deviceready event.",
   "cordova": {
-    "id": "cordova-plugin-recognition-facial",
+    "id": "cordova-plugin-neurotechnology",
     "platforms": ["android", "ios"]
   },
   "repository": {
