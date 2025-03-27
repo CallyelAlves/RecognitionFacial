@@ -50,11 +50,11 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
         try {
             switch (action) {
-                case "initialize":
-                    initializeMatchingService("initializeLicense");
+                case "initializeLicense":
+                    initializeNeurotechnologyService("initializeLicense");
                     return true;
-                case "initializeMatchingClient":
-                    initializeMatchingService("initializeMatchingClient");
+                case "initializeClient":
+                    initializeNeurotechnologyService("initializeClient");
                     return true;
                 case "enrollFromBase64":
                     return enrollFromBase64(args);
@@ -73,7 +73,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private void initializeMatchingService(String method) {
+    private void initializeNeurotechnologyService(String method) {
         if ("initializeLicense".equals(method)) {
             NeurotechnologyService.initializeLicense(callbackContext, this.context);
         } else if ("initializeMatchingClient".equals(method)) {
