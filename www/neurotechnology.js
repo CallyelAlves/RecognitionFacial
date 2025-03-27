@@ -1,24 +1,24 @@
-var recognitionFacial = {
-    initialize: function(successCallback, errorCallback) {
+var neurotechnology = {
+    initializeLicense: function(successCallback, errorCallback) {
         console.log("Calling initialize");
-        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "initialize", []);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeLicense", []);
     },
-    initializeMatchingClient: function(successCallback, errorCallback) {
+    initializeClient: function(successCallback, errorCallback) {
         console.log("Calling initialize");
-        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "initializeMatchingClient", []);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeClient", []);
     },
     enrollFromBase64: function(personId, image, successCallback, errorCallback) {
         console.log("Calling enrollFromBase64 with personId:", personId);
-        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "enrollFromBase64", [personId, image]);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "enrollFromBase64", [personId, image]);
     },
     identifyBase64: function(image, successCallback, errorCallback) {
         console.log("Calling identifyBase64 with image.");
-        cordova.exec(successCallback, errorCallback, "RecognitionFacial", "identifyBase64", [image]);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "identifyBase64", [image]);
     },
     startCamera: function(successCallback, errorCallback) {
         console.log("Calling startCamera with image.");
-        cordova.exec(successCallback, errorCallback, 'RecognitionFacial', 'startCamera', []);
+        cordova.exec(successCallback, errorCallback, 'Neurotechnology', 'startCamera', []);
     }
 };
 
-module.exports = recognitionFacial;
+module.exports = neurotechnology;
