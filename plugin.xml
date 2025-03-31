@@ -18,6 +18,7 @@
 
         <source-file src="src/android/Neurotechnology.java" target-dir="src/com/cordova/neurotechnology" />
         <source-file src="src/android/NeurotechnologyService.java" target-dir="src/com/cordova/neurotechnology" />
+        <source-file src="src/android/utils/Callback.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/NeurotechnologyServiceResluts.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/AuthenticationError.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/AutoFitTextureView.java" target-dir="src/com/cordova/neurotechnology/utils" />

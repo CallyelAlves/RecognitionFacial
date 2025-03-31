@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.cordova.neurotechnology.NeurotechnologyService;
+import com.cordova.neurotechnology.utils.Callback;
 import com.cordova.neurotechnology.utils.AutoFitTextureView;
 import com.cordova.neurotechnology.utils.FaceOverlayView;
 import com.neurotec.biometrics.NBiometricOperation;
@@ -24,6 +25,7 @@ import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import br.com.nasajon.pontomobile.R;
 
@@ -58,8 +60,8 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                     return true;
                 case "enrollFromBase64":
                     return enrollFromBase64(args);
-                case "identifyBase64":
-                    return identifyBase64(args);
+                case "identifyFace":
+                    return identifyFace(args);
                 case "startCamera":
                     startCamera();
                     return true;
@@ -74,18 +76,28 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     }
 
     private void initializeNeurotechnologyService(String method) {
-        if ("initializeLicense".equals(method)) {
-            NeurotechnologyService.initializeLicense(callbackContext, this.context);
-        } else if ("initializeMatchingClient".equals(method)) {
-            NeurotechnologyService.initializeMatchingClient(callbackContext, this.context);
+        try {
+            if ("initializeLicense".equals(method)) {
+                NeurotechnologyService.initializeLicense(this.context);
+            } else if ("initializeClient".equals(method)) {
+                NeurotechnologyService.initializeClient(this.context);
+            } else {
+                callbackContext.error("Invalid method: " + method);
+                return;
+            }
+
+            callbackContext.success(method);
+        } catch (Exception e) {
+            callbackContext.error("Error in " + method + ": " + e.getMessage());
         }
     }
 
+
     private boolean enrollFromBase64(JSONArray args) {
         try {
-            String personId = args.getString(0);
+            JSONObject userData = args.getJSONObject(0);
             String base64Image = args.getString(1);
-            boolean success = NeurotechnologyService.enrollFromBase64(personId, base64Image, callbackContext);
+            boolean success = NeurotechnologyService.enrollFromBase64(userData, base64Image);
             if (success) {
                 callbackContext.success("Enrollment successful");
             } else {
@@ -98,14 +110,14 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private boolean identifyBase64(JSONArray args) {
+    private boolean identifyFace(JSONArray args) {
         try {
             String base64Image = args.getString(0);
-            String[] result = NeurotechnologyService.IdentifyFace(base64Image, callbackContext);
+            String[] result = NeurotechnologyService.identifyFace(base64Image);
             callbackContext.success(String.join(", ", result));
             return true;
         } catch (Exception e) {
-            callbackContext.error("Error in identifyBase64: " + e.getMessage());
+            callbackContext.error("Error in identifyFace: " + e.getMessage());
             return false;
         }
     }
@@ -165,18 +177,28 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         neurotechnologyService.setCompletionHandler(new CompletionHandler<NBiometricTask, NBiometricOperation>() {
             @Override
             public void completed(NBiometricTask task, NBiometricOperation operation) {
-                Log.d(TAG, "Processamento biométrico concluído.");
+                Log.d(TAG, "Processamento concluído.");
             }
 
             @Override
             public void failed(Throwable throwable, NBiometricOperation operation) {
-                Log.e(TAG, "Erro no processamento biométrico", throwable);
+                Log.e(TAG, "Erro no processamento", throwable);
             }
         });
 
         neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
         neurotechnologyService.openCamera(context, textureView, backgroundHandler);
-        neurotechnologyService.processCameraFrames(callbackContext, context, activity, textureView, faceOverlayView);
+        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, new Callback() {
+            @Override
+            public void onSuccess(String result) {
+                callbackContext.success(result);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                callbackContext.error(errorMessage);
+            }
+        });
     }
 
     @Override

@@ -1,4 +1,4 @@
-package com.app.facesample.helpers;
+package com.cordova.neurotechnology.helpers;
 
 public class FaceFrame {
 

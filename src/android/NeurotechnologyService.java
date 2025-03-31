@@ -1,32 +1,40 @@
 package com.cordova.neurotechnology;
 
+import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.os.Environment;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.AsyncTask;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.Base64;
 import android.util.Log;
+import android.util.Size;
+import android.view.Surface;
+import android.view.TextureView;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.WebView;
 
-import com.neurotec.biometrics.NBiographicDataSchema;
-import com.neurotec.biometrics.NBiometricOperation;
-import com.neurotec.biometrics.NBiometricStatus;
-import com.neurotec.biometrics.NBiometricTask;
-import com.neurotec.biometrics.NFace;
-import com.neurotec.biometrics.NLAttributes;
-import com.neurotec.biometrics.NMatchingResult;
-import com.neurotec.biometrics.NSubject;
-import com.neurotec.biometrics.NTemplateSize;
-import com.neurotec.biometrics.client.NBiometricClient;
-import com.neurotec.images.NImage;
-import com.neurotec.images.NImageFormat;
-import com.neurotec.io.NBuffer;
-import com.neurotec.lang.NCore;
-import com.neurotec.licensing.NLicenseManager;
-import com.neurotec.licensing.gui.LicensingPreferencesFragment;
-import com.neurotec.biometrics.NLivenessMode;
-import com.neurotec.images.NPixelFormat;
-import com.neurotec.util.concurrent.CompletionHandler;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -35,50 +43,41 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.Collections;
+
+import com.neurotec.biometrics.NBiographicDataSchema;
+import com.neurotec.biometrics.client.NBiometricClient;
+import com.neurotec.biometrics.NBiometricOperation;
+import com.neurotec.biometrics.NBiometricStatus;
+import com.neurotec.biometrics.NBiometricTask;
+import com.neurotec.biometrics.NFace;
+import com.neurotec.biometrics.NLAttributes;
+import com.neurotec.biometrics.NLivenessMode;
+import com.neurotec.biometrics.NMatchingResult;
+import com.neurotec.biometrics.NSubject;
+import com.neurotec.biometrics.NTemplateSize;
+import com.neurotec.images.NImage;
+import com.neurotec.images.NImageFormat;
+import com.neurotec.images.NPixelFormat;
+import com.neurotec.io.NBuffer;
+import com.neurotec.lang.NCore;
+import com.neurotec.licensing.NLicenseManager;
+import com.neurotec.licensing.gui.LicensingPreferencesFragment;
+import com.neurotec.util.concurrent.CompletionHandler;
 
 import org.apache.cordova.CallbackContext;
+import org.json.JSONObject;
 
-import com.cordova.neurotechnology.utils.NeurotechnologyServiceResluts;
+import com.cordova.neurotechnology.utils.Callback;
 import com.cordova.neurotechnology.utils.AuthenticationError;
-import com.app.facesample.licensing.LicensingManager;
-import com.app.facesample.licensing.LicensingState;
-import br.com.nasajon.pontomobile.R;
 import com.cordova.neurotechnology.utils.AutoFitTextureView;
-
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.hardware.camera2.CameraDevice;
-import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.params.StreamConfigurationMap;
-import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CaptureRequest;
-import android.hardware.camera2.CameraCaptureSession;
-import android.util.Size;
-import android.graphics.SurfaceTexture;
-import android.view.Surface;
-import android.view.View;
-import android.Manifest;
-import androidx.core.app.ActivityCompat;
-import android.content.pm.PackageManager;
-import androidx.annotation.NonNull;
-import java.util.Collections;
-import com.app.facesample.helpers.FaceFrame;
-import android.view.TextureView;
-import android.app.Activity;
-import android.view.ViewGroup;
-import android.webkit.WebView;
-import android.graphics.RectF;
-import android.graphics.Rect;
-
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Path;
-
 import com.cordova.neurotechnology.utils.FaceOverlayView;
+import com.cordova.neurotechnology.utils.NeurotechnologyServiceResluts;
+import com.cordova.neurotechnology.helpers.FaceFrame;
+import com.cordova.neurotechnology.licensing.LicensingManager;
+import com.cordova.neurotechnology.licensing.LicensingState;
 
+import br.com.nasajon.pontomobile.R;
 
 public class NeurotechnologyService implements LicensingManager.LicensingStateCallback {
 
@@ -97,49 +96,34 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
 
-    public static void initializeLicense(CallbackContext callbackContext, Context context) {
+    public static void initializeLicense(Context context) {
         NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
         NCore.setContext(context);
-
-        Log.e(LOG_TAG, "InitializationTask : Before");
         new InitializationTask(context).execute();
-        Log.e(LOG_TAG, "InitializationTask : After");
-        callbackContext.success("initializeLicense");
     }
 
-    public static void initializeMatchingClient(CallbackContext callbackContext, Context context) {
+    public static void initializeClient(Context context) {
         if (engine == null) {
-            try {
-                engine = new NBiometricClient();
-                String path = context.getFilesDir().getAbsolutePath()
-                        + System.getProperty("file.separator") + "BiometricsV50.db";
-                engine.setDatabaseConnectionToSQLite(path);
-                NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
-                engine.setCustomDataSchema(nBiographicDataSchema);
-                engine.setUseDeviceManager(true);
-                engine.setMatchingWithDetails(true);
-                engine.setFacesCreateThumbnailImage(true);
-                engine.setFacesThumbnailImageWidth(90);
-                engine.setProperty("Faces.IcaoUnnaturalSkinToneThreshold", 10);
-                engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
-                engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
-                engine.initialize();
-
-                callbackContext.success("initializeMatchingClient");
-            } catch (Exception ex) {
-                callbackContext.error("initializeMatchingClient");
-                Log.e(LOG_TAG, "Failed initialization", ex);
-            }
+            engine = new NBiometricClient();
+            String path = context.getFilesDir().getAbsolutePath()
+                    + System.getProperty("file.separator") + "BiometricsV50.db";
+            engine.setDatabaseConnectionToSQLite(path);
+            NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
+            engine.setCustomDataSchema(nBiographicDataSchema);
+            engine.setUseDeviceManager(true);
+            engine.setMatchingWithDetails(true);
+            engine.setFacesCreateThumbnailImage(true);
+            engine.setFacesThumbnailImageWidth(90);
+            engine.setProperty("Faces.IcaoUnnaturalSkinToneThreshold", 10);
+            engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
+            engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
+            engine.initialize();
         }
     }
 
-    public static void reset() {
-        engine.clear();
-    }
-
-    public static AuthenticationError enrollTemplate(NSubject subject, String personId, NImage image) {
+    public static AuthenticationError enrollTemplate(NSubject subject, String userPassword, NImage image) {
         try {
-            String uniqueID = personId + "_" + UUID.randomUUID().toString();
+            String uniqueID = userPassword + "_" + UUID.randomUUID().toString();
             subject.setId(uniqueID);
 
             NImageFormat format = image.getInfo().getFormat();
@@ -217,7 +201,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return resultsList;
     }
 
-    public static boolean enrollFromBase64(String personId, String base64Image, CallbackContext callbackContext) {
+    public static boolean enrollFromBase64(JSONObject userData, String base64Image) {
         try {
             byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
             NImage image = NImage.fromMemory(new NBuffer(decodedBytes));
@@ -226,15 +210,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 Log.e(LOG_TAG, "Invalid image provided.");
                 return false;
             }
-            callbackContext.success("Function enrollFromBase64 2");
+
             NSubject extractSubject = new NSubject();
             NFace face = engine.detectFaces(image);
             if (face != null && face.getObjects().size() > 0) {
                 extractSubject.getFaces().add(face);
-                AuthenticationError result = enrollTemplate(extractSubject, personId, image);
-                callbackContext.success("Function enrollFromBase64 3");
+                String userPassword = userData.getString("senhapontoweb");
+                AuthenticationError result = enrollTemplate(extractSubject, userPassword, image);
+
                 if (result == AuthenticationError.OK) {
-                    Log.i(LOG_TAG, "Enrollment successful for personId: " + personId);
+                    Log.i(LOG_TAG, "Enrollment successful for userPassword: " + userPassword);
                     return true;
                 } else {
                     Log.e(LOG_TAG, "Enrollment failed with error: " + result);
@@ -297,20 +282,21 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public static String[] IdentifyFace(String base64Image, CallbackContext callbackContext) {
+    public static String[] identifyFace(String base64Image) {
         String[] identifiedUsers = null;
         byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
         NImage image = NImage.fromMemory(new NBuffer(decodedBytes));
-        NSubject extractSubject = new NSubject();
+        
         if (image != null) {
             NFace face = engine.detectFaces(image);
             if (face.getObjects().size() > 0) {
+                NSubject extractSubject = new NSubject();
                 extractSubject.getFaces().add(face);
+
                 List<NeurotechnologyServiceResluts> results = NeurotechnologyService.identify(extractSubject);
+
                 if (!results.isEmpty() && results.size() == 1
-                        && results.get(0).getAuthenticationError() != AuthenticationError.OK) {
-                    // Tratamento de erro, se necessário
-                }
+                        && results.get(0).getAuthenticationError() != AuthenticationError.OK) {  }
                 identifiedUsers = prepareIdentifiedUsers(results);
             }
         }
@@ -364,7 +350,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage(), e);
             }
             Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
-            Log.i(LOG_TAG, isLicenseObtained ? "Licenses were obtained 1" : "Licenses were not obtained 1");
             return true;
         }
 
@@ -547,10 +532,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return croppedBitmap;
     }
 
-    // Conversão para JPEG com alta qualidade
     private byte[] convertBitmapToHighQualityJPEG(Bitmap bitmap) {
         try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
-            // Ajuste o valor de qualidade (0-100), ex: 90
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream);
             return stream.toByteArray();
         } catch (IOException e) {
@@ -559,97 +542,101 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public void processCameraFrames(CallbackContext callback, Context context, Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
-        new Thread(() -> {
-            while (isProcessingFrames) {
-                if (engine == null) {
-                    Log.e(LOG_TAG, "Erro: engine não foi inicializado!");
-                    return;
-                }
-
-                synchronized (captureLock) {
-                    while (mImageQueue.isEmpty()) {
-                        try {
-                            captureLock.wait();
-                        } catch (InterruptedException e) {
-                            Log.e(LOG_TAG, "Waiting interrupted", e);
-                        }
-                    }
-                }
-
-                if (!isProcessingFrames) {
-                    Log.d("Camera", "Processamento de frames interrompido.");
-                    return;
-                }
-                NImage image = null;
-
-                if (!mImageQueue.isEmpty()) {
-                    FaceFrame data = mImageQueue.remove(0);
-                    if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
-                        Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
-                        continue;
+    public void processCameraFrames(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView, Callback callback) {
+            new Thread(() -> {
+                while (isProcessingFrames) {
+                    if (engine == null) {
+                        Log.e(LOG_TAG, "Erro: engine não foi inicializado!");
+                        callback.onFailure("Erro: engine não inicializado!");
+                        return;
                     }
 
-                    NSubject subject = new NSubject();
-                    try {
-                        if (data.getBuffer2() != null && data.getBuffer3() != null) {
-                            image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
-                            image.copyFromYCbCrData(new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                    new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                    new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3());
-                        } else {
-                            image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
-                        }
-                    } catch (IllegalArgumentException ex) {
-                        Log.e(LOG_TAG, "Formato de imagem inválido. Ignorando o frame!", ex);
-                    }
-
-                    if (image != null) {
-                        NFace nFace = engine.detectFaces(image);
-                        subject.getFaces().add(nFace);
-
-                        NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
-                        engine.performTask(task);
-
-                        if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
-                            NFace detectedFace = subject.getFaces().get(0);
-                            if (detectedFace.getObjects().size() > 0) {
-                                String base64Image = convertNImageToBase64(image);
-                                isProcessingFrames = false;
-
-                                callback.success(base64Image);
-                                closeCamera();
-                                activity.runOnUiThread(() -> {
-                                    try {
-                                        if (textureView != null) {
-                                            textureView.setVisibility(View.GONE);
-                                        }
-                                        stopBackgroundThread();
-                                        if (textureView != null) {
-                                            textureView.setSurfaceTextureListener(null);
-                                            SurfaceTexture surface = textureView.getSurfaceTexture();
-                                            if (surface != null) {
-                                                surface.release();
-                                            }
-                                            ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
-                                            rootView.removeView(textureView);
-                                            rootView.removeView(faceOverlayView);
-                                        }
-                                        faceOverlayView.setVisibility(View.GONE);
-                                    } catch (Exception e) {
-                                        Log.e("CameraError", "Erro ao fechar câmera", e);
-                                    }
-                                });
-                                return;
-                            } else {
-                                Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                    synchronized (captureLock) {
+                        while (mImageQueue.isEmpty()) {
+                            try {
+                                captureLock.wait();
+                            } catch (InterruptedException e) {
+                                Log.e(LOG_TAG, "Waiting interrupted", e);
                             }
-                        } else {
-                            Log.e(LOG_TAG, "Erro no reconhecimento facial. Status: " + task.getStatus());
+                        }
+                    }
+
+                    if (!isProcessingFrames) {
+                        Log.d("Camera", "Processamento de frames interrompido.");
+                        return;
+                    }
+
+                    if (!mImageQueue.isEmpty()) {
+                        FaceFrame data = mImageQueue.remove(0);
+                        if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
+                            Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
+                            continue;
+                        }
+
+                        NSubject subject = new NSubject();
+                        NImage image = null;
+
+                        try {
+                            if (data.getBuffer2() != null && data.getBuffer3() != null) {
+                                image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                                image.copyFromYCbCrData(new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
+                                        new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
+                                        new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3());
+                            } else {
+                                image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
+                            }
+                        } catch (IllegalArgumentException ex) {
+                            Log.e(LOG_TAG, "Formato de imagem inválido. Ignorando o frame!", ex);
+                            continue;
+                        }
+
+                        if (image != null) {
+                            NFace nFace = engine.detectFaces(image);
+                            subject.getFaces().add(nFace);
+
+                            NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
+                            engine.performTask(task);
+
+                            if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
+                                NFace detectedFace = subject.getFaces().get(0);
+                                if (detectedFace.getObjects().size() > 0) {
+                                    String base64Image = convertNImageToBase64(image);
+                                    isProcessingFrames = false;
+
+                                    closeCamera();
+                                    activity.runOnUiThread(() -> {
+                                        try {
+                                            if (textureView != null) {
+                                                textureView.setVisibility(View.GONE);
+                                            }
+                                            stopBackgroundThread();
+                                            if (textureView != null) {
+                                                textureView.setSurfaceTextureListener(null);
+                                                SurfaceTexture surface = textureView.getSurfaceTexture();
+                                                if (surface != null) {
+                                                    surface.release();
+                                                }
+                                                ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
+                                                rootView.removeView(textureView);
+                                                rootView.removeView(faceOverlayView);
+                                            }
+                                            faceOverlayView.setVisibility(View.GONE);
+                                        } catch (Exception e) {
+                                            Log.e("CameraError", "Erro ao fechar câmera", e);
+                                        }
+                                    });
+
+                                    callback.onSuccess(base64Image);
+                                    return;
+                                } else {
+                                    Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                                }
+                            } else {
+                                Log.e(LOG_TAG, "Erro no reconhecimento facial. Status: " + task.getStatus());
+                            }
                         }
                     }
                 }
-            }
         }).start();
     }
 
@@ -679,11 +666,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public NBiometricClient getBiometricClient() {
         return biometricClient;
-    }
-
-    public interface Callback {
-        void onSuccess(String message);
-        void onFailure(String error);
     }
 
     public void closeCamera() {

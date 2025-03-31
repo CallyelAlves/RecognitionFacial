@@ -1,4 +1,4 @@
-package com.app.facesample.licensing;
+package com.cordova.neurotechnology.licensing;
 
 public enum LicensingState {
 	NOT_OBTAINED,

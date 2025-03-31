@@ -1,4 +1,4 @@
-package com.app.facesample.licensing;
+package com.cordova.neurotechnology.licensing;
 
 import android.content.Context;
 import android.os.AsyncTask;
