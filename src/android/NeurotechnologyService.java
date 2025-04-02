@@ -108,7 +108,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             String path = context.getFilesDir().getAbsolutePath()
                     + System.getProperty("file.separator") + "BiometricsV50.db";
             engine.setDatabaseConnectionToSQLite(path);
-            NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob)");
+            NBiographicDataSchema nBiographicDataSchema = NBiographicDataSchema.parse("(Thumbnail blob, UserData string)");
             engine.setCustomDataSchema(nBiographicDataSchema);
             engine.setUseDeviceManager(true);
             engine.setMatchingWithDetails(true);
@@ -121,8 +121,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public static AuthenticationError enrollTemplate(NSubject subject, String userPassword, NImage image) {
+    public static AuthenticationError enrollTemplate(NSubject subject, JSONObject userData, NImage image) {
         try {
+            String userPassword = userData.getString("nome");
             String uniqueID = userPassword + "_" + UUID.randomUUID().toString();
             subject.setId(uniqueID);
 
@@ -130,6 +131,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             if (format == null || !format.isCanWrite()) {
                 format = NImageFormat.getPNG();
             }
+            subject.getProperties().add("UserData", userData.toString());
             subject.getProperties().add("Thumbnail", image.save(format));
 
             NBiometricTask taskEnroll = engine.createTask(EnumSet.of(NBiometricOperation.ENROLL), subject);
@@ -169,13 +171,21 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         res.setPersonId(names.length > 0 ? names[0] : id);
 
                         NSubject sub = new NSubject();
-                        sub.setId(matchingResult.getId());
+                        sub.setId(id);
                         NBiometricStatus status = engine.get(sub);
 
-                        if (status == NBiometricStatus.OK && sub.getProperties().containsKey("Thumbnail")) {
-                            NBuffer nBuffer = (NBuffer) sub.getProperties().get("Thumbnail");
-                            NImage img = NImage.fromMemory(nBuffer);
-                            res.setEnroledImage(img);
+                        if (status == NBiometricStatus.OK) {
+                            if (sub.getProperties().containsKey("UserData")) {
+                                String userDataJson = (String) sub.getProperties().get("UserData");
+                                res.setUserData(new JSONObject(userDataJson));
+                            }
+
+                            if (sub.getProperties().containsKey("Thumbnail")) {
+                                NBuffer nBuffer = (NBuffer) sub.getProperties().get("Thumbnail");
+                                NImage img = NImage.fromMemory(nBuffer);
+                                res.setEnroledImage(img);
+                            }
+
                             resultsList.add(res);
                         }
                     }
@@ -215,11 +225,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             NFace face = engine.detectFaces(image);
             if (face != null && face.getObjects().size() > 0) {
                 extractSubject.getFaces().add(face);
-                String userPassword = userData.getString("senhapontoweb");
-                AuthenticationError result = enrollTemplate(extractSubject, userPassword, image);
+                AuthenticationError result = enrollTemplate(extractSubject, userData, image);
 
                 if (result == AuthenticationError.OK) {
-                    Log.i(LOG_TAG, "Enrollment successful for userPassword: " + userPassword);
+                    Log.i(LOG_TAG, "Enrollment successful");
                     return true;
                 } else {
                     Log.e(LOG_TAG, "Enrollment failed with error: " + result);
@@ -235,53 +244,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public static void populateTemplates() {
-        String downloadsPath = getDownloadsPath();
-        File imagesDir = new File(downloadsPath, "Imagens");
-        File[] files = imagesDir.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                if (file.isFile()) {
-                    String imagePath = file.getAbsolutePath();
-                    Bitmap bitmap = BitmapFactory.decodeFile(imagePath);
-                    byte[] template = getBytesFromBitmap(bitmap);
-
-                    String personId = file.getName();
-                    int lastDotIndex = personId.lastIndexOf('.');
-                    if (lastDotIndex > 0) {
-                        personId = personId.substring(0, lastDotIndex);
-                    }
-
-                    NImage image = NImage.fromMemory(new NBuffer(template));
-                    NSubject extractSubject = new NSubject();
-                    if (image != null) {
-                        NFace face = engine.detectFaces(image);
-                        if (face.getObjects().size() > 0) {
-                            extractSubject.getFaces().add(face);
-                            enrollTemplate(extractSubject, personId, image);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    public static String getDownloadsPath() {
-        File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        return (downloadsDir != null && downloadsDir.exists())
-                ? downloadsDir.getAbsolutePath() + System.getProperty("file.separator")
-                : null;
-    }
-
-    public static byte[] getBytesFromBitmap(Bitmap bitmap) {
-        try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-            return stream.toByteArray();
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
     public static String[] identifyFace(String base64Image) {
         String[] identifiedUsers = null;
         byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
@@ -292,7 +254,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             if (face.getObjects().size() > 0) {
                 NSubject extractSubject = new NSubject();
                 extractSubject.getFaces().add(face);
-
                 List<NeurotechnologyServiceResluts> results = NeurotechnologyService.identify(extractSubject);
 
                 if (!results.isEmpty() && results.size() == 1
@@ -307,7 +268,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         ArrayList<String> list = new ArrayList<>();
         for (NeurotechnologyServiceResluts res : results) {
             if (res.getAuthenticationError() != null && res.getAuthenticationError() == AuthenticationError.OK) {
-                list.add(res.getPersonId());
+                list.add(res.getUserData().toString());
             }
         }
         return list.toArray(new String[0]);

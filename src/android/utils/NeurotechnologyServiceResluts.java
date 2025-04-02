@@ -1,11 +1,13 @@
 package com.cordova.neurotechnology.utils;
 
+import org.json.JSONObject;
 import com.neurotec.images.NImage;
 
 public class NeurotechnologyServiceResluts {
     private AuthenticationError authenticationError;
     private String personId;
     private NImage enrolledImage;
+    private JSONObject userData;
 
     public NeurotechnologyServiceResluts(){
         this.enrolledImage = null;
@@ -29,4 +31,12 @@ public class NeurotechnologyServiceResluts {
     }
 
     public void setEnroledImage(NImage image){ this.enrolledImage = image;}
+
+    public JSONObject getUserData() {
+        return userData;
+    }
+
+    public void setUserData(JSONObject userData) {
+        this.userData = userData;
+    }
 }
