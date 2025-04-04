@@ -17,7 +17,11 @@ var neurotechnology = {
     },
     startCamera: function(successCallback, errorCallback) {
         console.log("Calling startCamera with image.");
-        cordova.exec(successCallback, errorCallback, 'Neurotechnology', 'startCamera', []);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "startCamera", []);
+    },
+    cleanDB: function(successCallback, errorCallback) {
+        console.log("Calling cleanDB");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "cleanDB", []);
     }
 };
 

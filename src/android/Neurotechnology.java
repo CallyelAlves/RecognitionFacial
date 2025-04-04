@@ -65,6 +65,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 case "startCamera":
                     startCamera();
                     return true;
+                case "cleanDB":
+                    cleanDB();
+                    return true;
                 default:
                     return false;
             }
@@ -89,6 +92,14 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
             callbackContext.success(method);
         } catch (Exception e) {
             callbackContext.error("Error in " + method + ": " + e.getMessage());
+        }
+    }
+
+    private void cleanDB() {
+        try {
+            NeurotechnologyService.cleanDB();
+        } catch (Exception e) {
+            callbackContext.error("Error in enrollFromBase64: " + e.getMessage());
         }
     }
 

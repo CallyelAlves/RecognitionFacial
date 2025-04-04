@@ -121,6 +121,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
+    public static void cleanDB(){
+        engine.clear();
+    }
+
     public static AuthenticationError enrollTemplate(NSubject subject, JSONObject userData, NImage image) {
         try {
             String userPassword = userData.getString("nome");
