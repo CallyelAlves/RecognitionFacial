@@ -567,30 +567,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 if (detectedFace.getObjects().size() > 0) {
                                     String base64Image = convertNImageToBase64(image);
                                     isProcessingFrames = false;
-
-                                    closeCamera();
-                                    activity.runOnUiThread(() -> {
-                                        try {
-                                            if (textureView != null) {
-                                                textureView.setVisibility(View.GONE);
-                                            }
-                                            stopBackgroundThread();
-                                            if (textureView != null) {
-                                                textureView.setSurfaceTextureListener(null);
-                                                SurfaceTexture surface = textureView.getSurfaceTexture();
-                                                if (surface != null) {
-                                                    surface.release();
-                                                }
-                                                ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
-                                                rootView.removeView(textureView);
-                                                rootView.removeView(faceOverlayView);
-                                            }
-                                            faceOverlayView.setVisibility(View.GONE);
-                                        } catch (Exception e) {
-                                            Log.e("CameraError", "Erro ao fechar câmera", e);
-                                        }
-                                    });
-
+                                    
                                     callback.onSuccess(base64Image);
                                     return;
                                 } else {
@@ -631,6 +608,31 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public NBiometricClient getBiometricClient() {
         return biometricClient;
+    }
+
+    public void closeCameraView(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
+        closeCamera();
+        activity.runOnUiThread(() -> {
+            try {
+                if (textureView != null) {
+                    textureView.setVisibility(View.GONE);
+                }
+                stopBackgroundThread();
+                if (textureView != null) {
+                    textureView.setSurfaceTextureListener(null);
+                    SurfaceTexture surface = textureView.getSurfaceTexture();
+                    if (surface != null) {
+                        surface.release();
+                    }
+                    ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
+                    rootView.removeView(textureView);
+                    rootView.removeView(faceOverlayView);
+                }
+                faceOverlayView.setVisibility(View.GONE);
+            } catch (Exception e) {
+                Log.e("CameraError", "Erro ao fechar câmera", e);
+            }
+        });
     }
 
     public void closeCamera() {

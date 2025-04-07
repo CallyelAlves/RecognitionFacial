@@ -39,6 +39,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     private FaceOverlayView faceOverlayView;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
+    private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -67,6 +68,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                     return true;
                 case "cleanDB":
                     cleanDB();
+                    return true;
+                case "closeCamera":
+                    closeCameraView();
                     return true;
                 default:
                     return false;
@@ -184,7 +188,6 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         Log.d(TAG, "onSurfaceTextureAvailable chamado");
 
-        NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
         neurotechnologyService.setCompletionHandler(new CompletionHandler<NBiometricTask, NBiometricOperation>() {
             @Override
             public void completed(NBiometricTask task, NBiometricOperation operation) {
@@ -203,6 +206,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
             @Override
             public void onSuccess(String result) {
                 callbackContext.success(result);
+                closeCameraView();
             }
 
             @Override
@@ -223,6 +227,10 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
         Log.d(TAG, "onSurfaceTextureUpdated chamado");
+    }
+
+    public void closeCameraView() {
+        neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
     }
 
     private void startBackgroundThread() {

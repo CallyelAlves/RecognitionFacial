@@ -22,6 +22,10 @@ var neurotechnology = {
     cleanDB: function(successCallback, errorCallback) {
         console.log("Calling cleanDB");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "cleanDB", []);
+    },
+    closeCamera: function(successCallback, errorCallback) {
+        console.log("Calling close camera.");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "closeCamera", []);
     }
 };
 
