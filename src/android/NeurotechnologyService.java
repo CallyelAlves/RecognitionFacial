@@ -508,6 +508,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public void processCameraFrames(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView, Callback callback) {
+            mImageQueue.clear();
+            isProcessingFrames = true;
+            
             new Thread(() -> {
                 while (isProcessingFrames) {
                     if (engine == null) {
@@ -564,7 +567,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                             if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
                                 NFace detectedFace = subject.getFaces().get(0);
-                                if (detectedFace.getObjects().size() > 0) {
+                                if (!detectedFace.getObjects().isEmpty()) {
+                                    int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
+                                    Log.d(LOG_TAG, "Valor width: " + String.valueOf(faceWidth));
+                                    int imageWidth = image.getWidth();
+
+                                    float faceRatio = (float) faceWidth / imageWidth;
+                                    Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
+
+                                    // Só capturar se o rosto ocupar pelo menos 55% da largura da imagem
+                                    if (faceRatio < 0.55f) {
+                                        Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
+                                        continue;
+                                    }
                                     String base64Image = convertNImageToBase64(image);
                                     isProcessingFrames = false;
                                     
