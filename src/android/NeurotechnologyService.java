@@ -32,6 +32,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -507,97 +508,137 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public void processCameraFrames(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView, Callback callback) {
-            mImageQueue.clear();
-            isProcessingFrames = true;
-            
-            new Thread(() -> {
-                while (isProcessingFrames) {
-                    if (engine == null) {
-                        Log.e(LOG_TAG, "Erro: engine não foi inicializado!");
-                        callback.onFailure("Erro: engine não inicializado!");
-                        return;
-                    }
+    public void processCameraFrames(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView, TextView statusTextView, Callback callback) {
+        mImageQueue.clear();
+        isProcessingFrames = true;
 
-                    synchronized (captureLock) {
-                        while (mImageQueue.isEmpty()) {
-                            try {
-                                captureLock.wait();
-                            } catch (InterruptedException e) {
-                                Log.e(LOG_TAG, "Waiting interrupted", e);
-                            }
-                        }
-                    }
+        long[] faceDetectedStartTime = {0};
+        int stabilityTimeMs = 600;
 
-                    if (!isProcessingFrames) {
-                        Log.d("Camera", "Processamento de frames interrompido.");
-                        return;
-                    }
+        float[] lastCenterX = {-1f};
+        float[] lastCenterY = {-1f};
+        float stabilityThreshold = 0.03f;
 
-                    if (!mImageQueue.isEmpty()) {
-                        FaceFrame data = mImageQueue.remove(0);
-                        if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
-                            Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
-                            continue;
-                        }
+        new Thread(() -> {
+            while (isProcessingFrames) {
+                if (engine == null) {
+                    Log.e(LOG_TAG, "Erro: engine não foi inicializado!");
+                    callback.onFailure("Erro: engine não inicializado!");
+                    return;
+                }
 
-                        NSubject subject = new NSubject();
-                        NImage image = null;
-
+                synchronized (captureLock) {
+                    while (mImageQueue.isEmpty()) {
                         try {
-                            if (data.getBuffer2() != null && data.getBuffer3() != null) {
-                                image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
-                                image.copyFromYCbCrData(new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                        new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                        new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3());
-                            } else {
-                                image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
-                            }
-                        } catch (IllegalArgumentException ex) {
-                            Log.e(LOG_TAG, "Formato de imagem inválido. Ignorando o frame!", ex);
-                            continue;
-                        }
-
-                        if (image != null) {
-                            NFace nFace = engine.detectFaces(image);
-                            subject.getFaces().add(nFace);
-
-                            NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
-                            engine.performTask(task);
-
-                            if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
-                                NFace detectedFace = subject.getFaces().get(0);
-                                if (!detectedFace.getObjects().isEmpty()) {
-                                    int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
-                                    Log.d(LOG_TAG, "Valor width: " + String.valueOf(faceWidth));
-                                    int imageWidth = image.getWidth();
-
-                                    float faceRatio = (float) faceWidth / imageWidth;
-                                    Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
-
-                                    // Só capturar se o rosto ocupar pelo menos 55% da largura da imagem
-                                    if (faceRatio < 0.55f) {
-                                        Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
-                                        continue;
-                                    }
-                                    String base64Image = convertNImageToBase64(image);
-                                    isProcessingFrames = false;
-                                    
-                                    callback.onSuccess(base64Image);
-                                    return;
-                                } else {
-                                    Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
-                                }
-                            } else {
-                                Log.e(LOG_TAG, "Erro no reconhecimento facial. Status: " + task.getStatus());
-                            }
+                            captureLock.wait();
+                        } catch (InterruptedException e) {
+                            Log.e(LOG_TAG, "Waiting interrupted", e);
                         }
                     }
                 }
+
+                if (!isProcessingFrames) {
+                    Log.d("Camera", "Processamento de frames interrompido.");
+                    return;
+                }
+
+                if (!mImageQueue.isEmpty()) {
+                    FaceFrame data = mImageQueue.remove(0);
+                    if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
+                        Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
+                        continue;
+                    }
+
+                    NSubject subject = new NSubject();
+                    NImage image = null;
+
+                    try {
+                        if (data.getBuffer2() != null && data.getBuffer3() != null) {
+                            image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                            image.copyFromYCbCrData(
+                                    new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
+                                    new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
+                                    new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
+                            );
+                        } else {
+                            image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
+                        }
+                    } catch (IllegalArgumentException ex) {
+                        Log.e(LOG_TAG, "Formato de imagem inválido. Ignorando o frame!", ex);
+                        continue;
+                    }
+
+                    if (image != null) {
+                        NFace nFace = engine.detectFaces(image);
+                        subject.getFaces().add(nFace);
+
+                        NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
+                        engine.performTask(task);
+
+                        if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
+                            NFace detectedFace = subject.getFaces().get(0);
+                            if (!detectedFace.getObjects().isEmpty()) {
+                                int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
+                                int imageWidth = image.getWidth();
+
+                                float faceRatio = (float) faceWidth / imageWidth;
+                                Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
+
+                                float centerX = (detectedFace.getObjects().get(0).getBoundingRect().left + detectedFace.getObjects().get(0).getBoundingRect().right) / 2f / imageWidth;
+                                float centerY = (detectedFace.getObjects().get(0).getBoundingRect().top + detectedFace.getObjects().get(0).getBoundingRect().bottom) / 2f / image.getHeight();
+
+                                // Só capturar se o rosto ocupar pelo menos 55% da largura da imagem
+                                if (faceRatio < 0.55f) {
+                                    Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
+                                    continue;
+                                }
+
+                                // Verifica estabilidade do centro
+                                if (lastCenterX[0] >= 0 && lastCenterY[0] >= 0) {
+                                    float deltaX = Math.abs(centerX - lastCenterX[0]);
+                                    float deltaY = Math.abs(centerY - lastCenterY[0]);
+
+                                    if (deltaX > stabilityThreshold || deltaY > stabilityThreshold) {
+                                        faceDetectedStartTime[0] = 0;
+                                        activity.runOnUiThread(() -> statusTextView.setText("Mantenha o rosto estável"));
+                                        lastCenterX[0] = centerX;
+                                        lastCenterY[0] = centerY;
+                                        continue;
+                                    }
+                                }
+                                lastCenterX[0] = centerX;
+                                lastCenterY[0] = centerY;
+
+                                if (faceDetectedStartTime[0] == 0) {
+                                    faceDetectedStartTime[0] = System.currentTimeMillis();
+                                    activity.runOnUiThread(() -> statusTextView.setText("Aguardando estabilidade..."));
+                                }
+
+                                long duration = System.currentTimeMillis() - faceDetectedStartTime[0];
+                                if (duration >= stabilityTimeMs) {
+                                    activity.runOnUiThread(() -> statusTextView.setText("Capturando imagem..."));
+
+                                    String base64Image = convertNImageToBase64(image);
+                                    isProcessingFrames = false;
+                                    callback.onSuccess(base64Image);
+                                    return;
+                                }
+                            } else {
+                                Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                                faceDetectedStartTime[0] = 0;
+                            }
+                        } else {
+                            Log.e(LOG_TAG, "Erro no reconhecimento facial. Status: " + task.getStatus());
+                            faceDetectedStartTime[0] = 0;
+                            activity.runOnUiThread(() -> statusTextView.setText("Erro ao detectar rosto"));
+                        }
+                    }
+                }
+            }
         }).start();
     }
 
-    private void stopBackgroundThread() {
+    public void stopBackgroundThread() {
         if (backgroundHandler != null) {
             backgroundHandler.getLooper().quitSafely();
             backgroundHandler = null;

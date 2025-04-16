@@ -11,6 +11,8 @@ import android.view.LayoutInflater;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.TextView;
 
 import com.cordova.neurotechnology.NeurotechnologyService;
 import com.cordova.neurotechnology.utils.Callback;
@@ -39,6 +41,8 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     private FaceOverlayView faceOverlayView;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
+    private TextView statusTextView;
+    private ImageButton btnBack;
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
     @Override
@@ -164,6 +168,18 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 textureView.setVisibility(View.VISIBLE);
                 textureView.setSurfaceTextureListener(this);
 
+                btnBack = view.findViewById(R.id.btn_back);
+                statusTextView = view.findViewById(R.id.status_text_view);
+
+                btnBack.setOnClickListener(v -> {
+
+                    neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+                    neurotechnologyService.stopBackgroundThread();
+
+                    ViewGroup widget = (ViewGroup) activity.findViewById(android.R.id.content);
+                    widget.removeView(view);
+                });
+
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao iniciar câmera", e);
                 callbackContext.error("Erro ao iniciar câmera: " + e.getMessage());
@@ -202,13 +218,17 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
         neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
         neurotechnologyService.openCamera(context, textureView, backgroundHandler);
-        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, new Callback() {
+        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView, new Callback() {
             @Override
             public void onSuccess(String result) {
-                callbackContext.success(result);
-                closeCameraView();
-            }
+                activity.runOnUiThread(() -> {
+                    btnBack.setVisibility(View.GONE);
+                    statusTextView.setVisibility(View.GONE);
 
+                    callbackContext.success(result);
+                    closeCameraView();
+                });
+            }
             @Override
             public void onFailure(String errorMessage) {
                 callbackContext.error(errorMessage);
