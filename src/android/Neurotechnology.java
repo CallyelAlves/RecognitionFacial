@@ -26,6 +26,7 @@ import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -231,7 +232,13 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
             }
             @Override
             public void onFailure(String errorMessage) {
-                callbackContext.error(errorMessage);
+                PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, errorMessage);
+                pluginResult.setKeepCallback(true);
+                callbackContext.sendPluginResult(pluginResult);
+            }
+            @Override
+            public void sendPluginResult(PluginResult result) {
+                callbackContext.sendPluginResult(result);
             }
         });
     }

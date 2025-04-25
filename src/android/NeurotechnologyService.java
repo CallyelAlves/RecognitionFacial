@@ -67,6 +67,7 @@ import com.neurotec.licensing.gui.LicensingPreferencesFragment;
 import com.neurotec.util.concurrent.CompletionHandler;
 
 import org.apache.cordova.CallbackContext;
+import org.apache.cordova.PluginResult;
 import org.json.JSONObject;
 
 import com.cordova.neurotechnology.utils.Callback;
@@ -628,9 +629,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 faceDetectedStartTime[0] = 0;
                             }
                         } else {
-                            Log.e(LOG_TAG, "Erro no reconhecimento facial. Status: " + task.getStatus());
+                            String errorMessage = "Erro no reconhecimento facial. Status: " + task.getStatus();
+                            PluginResult result = new PluginResult(PluginResult.Status.ERROR, errorMessage);
+                            Log.e(LOG_TAG, errorMessage);
                             faceDetectedStartTime[0] = 0;
                             activity.runOnUiThread(() -> statusTextView.setText("Erro ao detectar rosto"));
+                            result.setKeepCallback(true);
+                            callback.sendPluginResult(result);
                         }
                     }
                 }
