@@ -15,9 +15,9 @@ var neurotechnology = {
         console.log("Calling identifyBase64 with image.");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "identifyFace", [image]);
     },
-    startCamera: function(successCallback, errorCallback) {
+    startCamera: function(tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, successCallback, errorCallback) {
         console.log("Calling startCamera with image.");
-        cordova.exec(successCallback, errorCallback, "Neurotechnology", "startCamera", []);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "startCamera", [tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto]);
     },
     cleanDB: function(successCallback, errorCallback) {
         console.log("Calling cleanDB");

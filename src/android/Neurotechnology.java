@@ -36,6 +36,7 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONException;
 
 import android.view.OrientationEventListener;
 import android.hardware.SensorManager;
@@ -57,6 +58,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     private ImageButton btnBack;
     private OrientationEventListener orientationEventListener;
     private int lastKnownRotation = -1;
+    private int tempoMinimoEstabilidadeMs;
+    private float limiteMovimentoPermitido;
+    private float proporcaoMinimaRosto;
 
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
@@ -83,7 +87,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 case "identifyFace":
                     return identifyFace(args);
                 case "startCamera":
-                    startCamera();
+                    startCamera(args);
                     return true;
                 case "cleanDB":
                     cleanDB();
@@ -156,7 +160,16 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private void startCamera() {
+    private void startCamera(JSONArray args) {
+        try {
+            tempoMinimoEstabilidadeMs = args.getInt(0);
+            limiteMovimentoPermitido = (float) args.getDouble(1);
+            proporcaoMinimaRosto = (float) args.getDouble(2);
+        } catch (JSONException e) {
+            Log.e(TAG, "Erro ao ler argumentos JSON", e);
+            // callbackContext.error("Erro ao ler argumentos JSON: " + e.getMessage());
+            return;
+        }
         this.activity = cordova.getActivity();
         final ViewGroup container = activity.findViewById(android.R.id.content);
 
@@ -291,14 +304,14 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
         neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
         neurotechnologyService.openCamera(context, textureView, backgroundHandler);
-        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView, new Callback() {
+        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView, tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, new Callback() {
             @Override
             public void onSuccess(String result) {
                 activity.runOnUiThread(() -> {
                     btnBack.setVisibility(View.GONE);
                     statusTextView.setVisibility(View.GONE);
-                    closeCameraView();
                     callbackContext.success(result);
+                    closeCameraView();
                 });
             }
             @Override

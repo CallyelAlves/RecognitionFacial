@@ -559,16 +559,25 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    public void processCameraFrames(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView, TextView statusTextView, Callback callback) {
+    public void processCameraFrames(
+            Activity activity, 
+            AutoFitTextureView textureView, 
+            FaceOverlayView faceOverlayView, 
+            TextView statusTextView,
+            int stabilityTimeMs,
+            float stabilityThreshold,
+            float minimumFaceProportion,
+            Callback callback
+        ) {
         mImageQueue.clear();
         isProcessingFrames = true;
 
         long[] faceDetectedStartTime = {0};
-        int stabilityTimeMs = 300;
+        // int stabilityTimeMs = 300;
 
         float[] lastCenterX = {-1f};
         float[] lastCenterY = {-1f};
-        float stabilityThreshold = 0.03f;
+        // float stabilityThreshold = 0.03f;
 
         new Thread(() -> {
             while (isProcessingFrames) {
@@ -638,7 +647,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 float centerX = (detectedFace.getObjects().get(0).getBoundingRect().centerX()) / (float) imageWidth;
                                 float centerY = (detectedFace.getObjects().get(0).getBoundingRect().centerY()) / (float) image.getHeight();
 
-                                if (faceRatio < 0.20f) {
+                                if (faceRatio < minimumFaceProportion) {
                                     Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
                                     continue;
                                 }
