@@ -23,7 +23,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="Voltar"
         android:src="@android:drawable/ic_menu_revert"
-        android:tint="#000000" />
+        android:tint="#FFFFFF" />
 
     <TextView
         android:id="@+id/status_text_view"
@@ -31,7 +31,7 @@
         android:layout_height="wrap_content"
         android:text="Carregando..."
         android:textSize="18sp"
-        android:textColor="#000000"
+        android:textColor="#FFFFFF"
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="16dp"/>
 </FrameLayout>

@@ -12,7 +12,8 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.PorterDuff;
 
 public class FaceOverlayView extends View {
-    private Paint paint;
+    private Paint maskPaint;
+    private Paint borderPaint;
     private RectF ovalRect;
     private Path path;
 
@@ -36,16 +37,28 @@ public class FaceOverlayView extends View {
     }
 
     private void init() {
-        paint = new Paint();
-        paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setAntiAlias(true);
+        maskPaint = new Paint();
+        maskPaint.setColor(Color.parseColor("#88000000"));
+        maskPaint.setStyle(Paint.Style.FILL);
+        maskPaint.setAntiAlias(true);
+
+        borderPaint = new Paint();
+        borderPaint.setColor(Color.RED);
+        borderPaint.setStyle(Paint.Style.STROKE);
+        borderPaint.setStrokeWidth(10);
+        borderPaint.setAntiAlias(true);
+
         path = new Path();
     }
 
     public void setOvalRect(RectF rect) {
         this.ovalRect = rect;
-        invalidate(); // Redesenha a view
+        invalidate();
+    }
+
+    public void setBorderColor(int color) {
+        borderPaint.setColor(color);
+        postInvalidate();
     }
 
     @Override
@@ -55,8 +68,8 @@ public class FaceOverlayView extends View {
             path.reset();
             path.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
             path.addOval(ovalRect, Path.Direction.CCW);
-
-            canvas.drawPath(path, paint);
+            canvas.drawPath(path, maskPaint);
+            canvas.drawOval(ovalRect, borderPaint);
         }
     }
 }

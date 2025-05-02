@@ -2,8 +2,11 @@ package com.cordova.neurotechnology;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
@@ -11,8 +14,12 @@ import android.view.LayoutInflater;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.TextView;
+import android.content.Context;
+import android.graphics.Matrix;
+import android.util.DisplayMetrics;
 
 import com.cordova.neurotechnology.NeurotechnologyService;
 import com.cordova.neurotechnology.utils.Callback;
@@ -30,6 +37,10 @@ import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import android.view.OrientationEventListener;
+import android.hardware.SensorManager;
+import android.view.Surface;
+
 import br.com.nasajon.pontomobile.R;
 
 public class Neurotechnology extends CordovaPlugin implements TextureView.SurfaceTextureListener {
@@ -44,6 +55,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     private Handler backgroundHandler;
     private TextView statusTextView;
     private ImageButton btnBack;
+    private OrientationEventListener orientationEventListener;
+    private int lastKnownRotation = -1;
+
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
     @Override
@@ -147,6 +161,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         final ViewGroup container = activity.findViewById(android.R.id.content);
 
         activity.runOnUiThread(() -> {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
             try {
                 Log.d(TAG, "Iniciando câmera na Activity: " + activity.getClass().getName());
 
@@ -163,7 +178,54 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                     return;
                 }
 
-                configureFaceOverlay(view);
+                view.post(() -> configureFaceOverlay(view));
+
+                // configureFaceOverlay(view);
+                // Detectar mudança de rotação
+                orientationEventListener = new OrientationEventListener(activity, SensorManager.SENSOR_DELAY_NORMAL) {
+                    @Override
+                    public void onOrientationChanged(int orientation) {
+                        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+                        if (rotation != lastKnownRotation) {
+                            lastKnownRotation = rotation;
+                            Log.d(TAG, "Nova rotação detectada: " + rotation);
+
+                            activity.runOnUiThread(() -> {
+                                View view = activity.findViewById(android.R.id.content);
+                                configureFaceOverlay(view); // Recalcula a oval com base na nova rotação
+                                CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+                                try{
+                                    String cameraId = manager.getCameraIdList()[1];
+                                    CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+                                    int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+
+                                    int displayRotation = getJpegOrientationSensor(sensorOrientation, rotation);
+                                    Matrix matrix = new Matrix();
+
+                                    int viewWidth = textureView.getWidth();
+                                    int viewHeight = textureView.getHeight();
+
+                                    if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270) {
+                                        // Ajusta para modo paisagem
+                                        float centerX = viewWidth / 2f;
+                                        float centerY = viewHeight / 2f;
+                                        matrix.postRotate(displayRotation, centerX, centerY);
+                                    } else if (rotation == Surface.ROTATION_180) {
+                                        matrix.postRotate(180, viewWidth / 2f, viewHeight / 2f);
+                                    }
+
+                                    textureView.setTransform(matrix);
+                                } catch (Exception e) {
+                                    Log.e("Camera erro:", "Camera exception", e);
+                                }
+                            });
+                        }
+                    }
+                };
+
+                if (orientationEventListener.canDetectOrientation()) {
+                    orientationEventListener.enable();
+                }
                 startBackgroundThread();
 
                 textureView.setVisibility(View.VISIBLE);
@@ -188,14 +250,24 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         });
     }
 
-    private void configureFaceOverlay(View view) {
-        int screenWidth = view.getResources().getDisplayMetrics().widthPixels;
-        int screenHeight = view.getResources().getDisplayMetrics().heightPixels;
+    private int getJpegOrientationSensor(int sensorOrientation, int deviceRotation) {
+        int[] ORIENTATIONS = {0, 90, 180, 270};
+        return (ORIENTATIONS[deviceRotation] + sensorOrientation + 270) % 360;
+    }
 
-        float ovalWidth = screenWidth * 0.7f;
+    private void configureFaceOverlay(View view) {
+        DisplayMetrics metrics = new DisplayMetrics();
+        activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        int screenWidth = metrics.widthPixels;
+        int screenHeight = metrics.heightPixels;
+
+        boolean isLandscape = screenWidth > screenHeight;
+
+        float ovalWidth = (isLandscape ? screenHeight : screenWidth) * 0.7f;
         float ovalHeight = ovalWidth * 1.8f;
-        float left = (screenWidth - ovalWidth) / 2;
-        float top = (screenHeight - ovalHeight) / 2;
+
+        float left = (screenWidth - ovalWidth) / 2f;
+        float top = (screenHeight - ovalHeight) / 2f;
 
         RectF ovalRect = new RectF(left, top, left + ovalWidth, top + ovalHeight);
         faceOverlayView.setOvalRect(ovalRect);
@@ -225,9 +297,8 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 activity.runOnUiThread(() -> {
                     btnBack.setVisibility(View.GONE);
                     statusTextView.setVisibility(View.GONE);
-
-                    callbackContext.success(result);
                     closeCameraView();
+                    callbackContext.success(result);
                 });
             }
             @Override
@@ -241,10 +312,13 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 callbackContext.sendPluginResult(result);
             }
         });
+        configureTransform(textureView);
     }
 
     @Override
-    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+        configureTransform(textureView);
+    }
 
     @Override
     public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
@@ -256,10 +330,39 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         Log.d(TAG, "onSurfaceTextureUpdated chamado");
     }
 
-    public void closeCameraView() {
-        neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+    private void configureTransform(TextureView textureView) {
+        if (textureView == null) return;
+
+        int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE))
+                .getDefaultDisplay().getRotation();
+
+        Matrix matrix = new Matrix();
+        RectF viewRect = new RectF(0, 0, textureView.getWidth(), textureView.getHeight());
+        RectF bufferRect = new RectF(0, 0, textureView.getHeight(), textureView.getWidth());
+        float centerX = viewRect.centerX();
+        float centerY = viewRect.centerY();
+
+        if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max(
+                    (float) textureView.getHeight() / textureView.getWidth(),
+                    (float) textureView.getWidth() / textureView.getHeight());
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(90 * (rotation - 2), centerX, centerY);
+        } else if (rotation == Surface.ROTATION_180) {
+            matrix.postRotate(180, centerX, centerY);
+        }
+
+        textureView.setTransform(matrix);
     }
 
+    public void closeCameraView() {
+        if (orientationEventListener != null) {
+            orientationEventListener.disable();
+        }
+        neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+    }
     private void startBackgroundThread() {
         backgroundThread = new HandlerThread("CameraBackground");
         backgroundThread.start();

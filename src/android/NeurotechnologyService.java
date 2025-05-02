@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
@@ -31,7 +32,9 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.WebView;
+import android.widget.ImageButton;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -84,6 +87,9 @@ import br.com.nasajon.pontomobile.R;
 public class NeurotechnologyService implements LicensingManager.LicensingStateCallback {
 
     private static final String LOG_TAG = NeurotechnologyService.class.getSimpleName();
+    private long faceDetectedStartTime = 0;
+    private static final long FACE_STABLE_DURATION_MS = 20000;
+    private static final int MIN_FACE_WIDTH = 350;
     private static NBiometricClient engine;
     private static final int ENROLLMENT_ACCURACY = 90;
 
@@ -97,6 +103,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private volatile boolean isProcessingFrames = true;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
+    private String currentCameraId;
+    private Context appContext;
 
     public static void initializeLicense(Context context) {
         NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
@@ -254,7 +262,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         String[] identifiedUsers = null;
         byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
         NImage image = NImage.fromMemory(new NBuffer(decodedBytes));
-        
+
         if (image != null) {
             NFace face = engine.detectFaces(image);
             if (face.getObjects().size() > 0) {
@@ -346,9 +354,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public void openCamera(Context context, AutoFitTextureView textureView, Handler backgroundHandler) {
+        this.appContext = context;
         CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
         try {
             String cameraId = manager.getCameraIdList()[1];
+            this.currentCameraId = cameraId;
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             Size[] outputSizes = map.getOutputSizes(SurfaceTexture.class);
@@ -367,49 +377,81 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 return;
             }
 
-            manager.openCamera(cameraId, new CameraDevice.StateCallback() {
-                @Override
-                public void onOpened(@NonNull CameraDevice camera) {
-                    cameraDevice = camera;
-                    try {
-                        CaptureRequest.Builder previewBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                        previewBuilder.addTarget(surface);
+            try {
+                int rotation = ((WindowManager) appContext.getSystemService(Context.WINDOW_SERVICE))
+                        .getDefaultDisplay().getRotation();
 
-                        cameraDevice.createCaptureSession(Collections.singletonList(surface), new CameraCaptureSession.StateCallback() {
-                            @Override
-                            public void onConfigured(@NonNull CameraCaptureSession session) {
-                                captureSession = session;
-                                try {
-                                    session.setRepeatingRequest(previewBuilder.build(), null, backgroundHandler);
-                                } catch (CameraAccessException e) {
-                                    Log.e(LOG_TAG, "Error in setRepeatingRequest", e);
+                int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+
+                int displayRotation = getJpegOrientationSensor(sensorOrientation, rotation);
+                Matrix matrix = new Matrix();
+
+                int viewWidth = textureView.getWidth();
+                int viewHeight = textureView.getHeight();
+
+                if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270) {
+                    // Ajusta para modo paisagem
+                    float centerX = viewWidth / 2f;
+                    float centerY = viewHeight / 2f;
+                    matrix.postRotate(displayRotation, centerX, centerY);
+                } else if (rotation == Surface.ROTATION_180) {
+                    matrix.postRotate(180, viewWidth / 2f, viewHeight / 2f);
+                }
+
+                textureView.setTransform(matrix);
+                manager.openCamera(cameraId, new CameraDevice.StateCallback() {
+                    @Override
+                    public void onOpened(@NonNull CameraDevice camera) {
+                        cameraDevice = camera;
+                        try {
+                            CaptureRequest.Builder previewBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                            previewBuilder.addTarget(surface);
+                            previewBuilder.set(CaptureRequest.JPEG_ORIENTATION, displayRotation);
+
+                            cameraDevice.createCaptureSession(Collections.singletonList(surface), new CameraCaptureSession.StateCallback() {
+                                @Override
+                                public void onConfigured(@NonNull CameraCaptureSession session) {
+                                    captureSession = session;
+                                    try {
+                                        session.setRepeatingRequest(previewBuilder.build(), null, backgroundHandler);
+                                    } catch (CameraAccessException e) {
+                                        Log.e(LOG_TAG, "Error in setRepeatingRequest", e);
+                                    }
                                 }
-                            }
 
-                            @Override
-                            public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-                                Log.e(LOG_TAG, "CameraCaptureSession configuration failed");
-                            }
-                        }, backgroundHandler);
-                    } catch (CameraAccessException e) {
-                        Log.e(LOG_TAG, "Error in creating preview request", e);
+                                @Override
+                                public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                                    Log.e(LOG_TAG, "CameraCaptureSession configuration failed");
+                                }
+                            }, backgroundHandler);
+                        } catch (CameraAccessException e) {
+                            Log.e(LOG_TAG, "Error in creating preview request", e);
+                        }
                     }
-                }
 
-                @Override
-                public void onDisconnected(@NonNull CameraDevice cameraDevice) {
-                    Log.d("Camera", "onDisconnected chamado");
-                    closeCamera();
-                }
+                    @Override
+                    public void onDisconnected(@NonNull CameraDevice cameraDevice) {
+                        Log.d("Camera", "onDisconnected chamado");
+                        closeCamera();
+                    }
 
-                @Override
-                public void onError(@NonNull CameraDevice cameraDevice, int error) {
-                    closeCamera();
-                }
-            }, backgroundHandler);
+                    @Override
+                    public void onError(@NonNull CameraDevice cameraDevice, int error) {
+                        closeCamera();
+                    }
+                }, backgroundHandler);
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Erro ao acessar a câmera", e);
+            }
+
         } catch (CameraAccessException e) {
             Log.e(LOG_TAG, "Error in openCamera", e);
         }
+    }
+
+    private int getJpegOrientationSensor(int sensorOrientation, int deviceRotation) {
+        int[] ORIENTATIONS = {0, 90, 180, 270};
+        return (ORIENTATIONS[deviceRotation] + sensorOrientation + 270) % 360;
     }
 
     public void startFrameProcessing(AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
@@ -445,12 +487,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 try {
                     RectF ovalBounds = faceOverlayView.getOvalRect();
-                    if (ovalBounds == null) {
-                        Log.e("Camera", "Erro: Oval não definida.");
+                    if (ovalBounds == null || ovalBounds.width() <= 0 || ovalBounds.height() <= 0) {
+                        Log.e("Camera", "Oval inválida");
+                        fullBitmap.recycle();
                         return;
                     }
 
                     Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
+
+                    if (croppedBitmap == null) {
+                        Log.e("Camera", "Erro ao recortar imagem");
+                        fullBitmap.recycle();
+                        return;
+                    }
                     fullBitmap.recycle();
 
                     byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
@@ -476,21 +525,22 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     private Bitmap cropToOval(Bitmap original, RectF ovalBounds) {
-        Bitmap croppedBitmap = Bitmap.createBitmap(
-                (int) ovalBounds.width(),
-                (int) ovalBounds.height(),
-                Bitmap.Config.ARGB_8888
-        );
+        int width = (int) ovalBounds.width();
+        int height = (int) ovalBounds.height();
 
+        if (width <= 0 || height <= 0) {
+            Log.e(LOG_TAG, "cropToOval: largura ou altura inválida - width: " + width + ", height: " + height);
+            return null;
+        }
+
+        Bitmap croppedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(croppedBitmap);
-        Paint paint = new Paint();
-        paint.setAntiAlias(true);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         Path path = new Path();
-        path.addOval(new RectF(0, 0, ovalBounds.width(), ovalBounds.height()), Path.Direction.CCW);
+        path.addOval(new RectF(0, 0, width, height), Path.Direction.CCW);
 
         canvas.drawColor(Color.WHITE);
-
         canvas.save();
         canvas.clipPath(path);
         canvas.drawBitmap(original, -ovalBounds.left, -ovalBounds.top, paint);
@@ -501,7 +551,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     private byte[] convertBitmapToHighQualityJPEG(Bitmap bitmap) {
         try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
             return stream.toByteArray();
         } catch (IOException e) {
             Log.e("Camera", "Erro ao converter bitmap para JPEG", e);
@@ -514,7 +564,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         isProcessingFrames = true;
 
         long[] faceDetectedStartTime = {0};
-        int stabilityTimeMs = 600;
+        int stabilityTimeMs = 300;
 
         float[] lastCenterX = {-1f};
         float[] lastCenterY = {-1f};
@@ -585,23 +635,24 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 float faceRatio = (float) faceWidth / imageWidth;
                                 Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
 
-                                float centerX = (detectedFace.getObjects().get(0).getBoundingRect().left + detectedFace.getObjects().get(0).getBoundingRect().right) / 2f / imageWidth;
-                                float centerY = (detectedFace.getObjects().get(0).getBoundingRect().top + detectedFace.getObjects().get(0).getBoundingRect().bottom) / 2f / image.getHeight();
+                                float centerX = (detectedFace.getObjects().get(0).getBoundingRect().centerX()) / (float) imageWidth;
+                                float centerY = (detectedFace.getObjects().get(0).getBoundingRect().centerY()) / (float) image.getHeight();
 
-                                // Só capturar se o rosto ocupar pelo menos 55% da largura da imagem
-                                if (faceRatio < 0.55f) {
+                                if (faceRatio < 0.20f) {
                                     Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
                                     continue;
                                 }
 
-                                // Verifica estabilidade do centro
                                 if (lastCenterX[0] >= 0 && lastCenterY[0] >= 0) {
                                     float deltaX = Math.abs(centerX - lastCenterX[0]);
                                     float deltaY = Math.abs(centerY - lastCenterY[0]);
 
                                     if (deltaX > stabilityThreshold || deltaY > stabilityThreshold) {
                                         faceDetectedStartTime[0] = 0;
-                                        activity.runOnUiThread(() -> statusTextView.setText("Mantenha o rosto estável"));
+                                        activity.runOnUiThread(() -> {
+                                            statusTextView.setText("Mantenha o rosto estável");
+                                            faceOverlayView.setBorderColor(Color.YELLOW);
+                                        });
                                         lastCenterX[0] = centerX;
                                         lastCenterY[0] = centerY;
                                         continue;
@@ -612,13 +663,18 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                                 if (faceDetectedStartTime[0] == 0) {
                                     faceDetectedStartTime[0] = System.currentTimeMillis();
-                                    activity.runOnUiThread(() -> statusTextView.setText("Aguardando estabilidade..."));
+                                    activity.runOnUiThread(() -> {
+                                        statusTextView.setText("Aguardando estabilidade...");
+                                        faceOverlayView.setBorderColor(Color.YELLOW);
+                                    });
                                 }
 
                                 long duration = System.currentTimeMillis() - faceDetectedStartTime[0];
                                 if (duration >= stabilityTimeMs) {
-                                    activity.runOnUiThread(() -> statusTextView.setText("Capturando imagem..."));
-
+                                    activity.runOnUiThread(() -> {
+                                        statusTextView.setText("Capturando imagem...");
+                                        faceOverlayView.setBorderColor(Color.GREEN);
+                                    });
                                     String base64Image = convertNImageToBase64(image);
                                     isProcessingFrames = false;
                                     callback.onSuccess(base64Image);
@@ -633,7 +689,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             PluginResult result = new PluginResult(PluginResult.Status.ERROR, errorMessage);
                             Log.e(LOG_TAG, errorMessage);
                             faceDetectedStartTime[0] = 0;
-                            activity.runOnUiThread(() -> statusTextView.setText("Erro ao detectar rosto"));
+                            activity.runOnUiThread(() -> {
+                                statusTextView.setText("Erro ao detectar rosto...");
+                                faceOverlayView.setBorderColor(Color.RED);
+                            });
                             result.setKeepCallback(true);
                             callback.sendPluginResult(result);
                         }
@@ -641,6 +700,80 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 }
             }
         }).start();
+    }
+
+    private Bitmap rotateBitmapAccordingToDevice(Bitmap bitmap) throws CameraAccessException {
+        CameraManager manager = (CameraManager) appContext.getSystemService(Context.CAMERA_SERVICE);
+        String cameraId = manager.getCameraIdList()[1];
+        CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+        int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+
+        WindowManager windowManager = (WindowManager) appContext.getSystemService(Context.WINDOW_SERVICE);
+        int deviceRotation = windowManager.getDefaultDisplay().getRotation();
+        int rotationDegrees = getJpegOrientationSensor(sensorOrientation, deviceRotation);
+
+        if (deviceRotation == 0) return bitmap;
+
+        Matrix matrix = new Matrix();
+        matrix.postRotate(rotationDegrees);
+
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+    }
+
+
+    private Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            Log.e(LOG_TAG, "Bitmap nulo ou já reciclado. Não é possível rotacionar.");
+            return null;
+        }
+
+        Matrix matrix = new Matrix();
+        matrix.postRotate(degrees);
+
+        try {
+            Bitmap rotatedBitmap = Bitmap.createBitmap(
+                    bitmap,
+                    0,
+                    0,
+                    bitmap.getWidth(),
+                    bitmap.getHeight(),
+                    matrix,
+                    true
+            );
+            return rotatedBitmap;
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Erro ao rotacionar bitmap", e);
+            return bitmap;
+        }
+    }
+
+    private Bitmap nImageToBitmap(NImage nImage) {
+        byte[] imageBytes = nImage.save(NImageFormat.getJPEG()).toByteArray();
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+    }
+
+    private int getJpegOrientation(Context context, String cameraId) {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+            int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+
+            WindowManager windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+            int deviceOrientation = windowManager.getDefaultDisplay().getRotation();
+
+            int degrees = 0;
+            switch (deviceOrientation) {
+                case Surface.ROTATION_0: degrees = 0; break;
+                case Surface.ROTATION_90: degrees = 90; break;
+                case Surface.ROTATION_180: degrees = 180; break;
+                case Surface.ROTATION_270: degrees = 270; break;
+            }
+
+            return (sensorOrientation - degrees + 360) % 360;
+        } catch (CameraAccessException e) {
+            Log.e(LOG_TAG, "Erro ao obter rotação", e);
+            return 0;
+        }
     }
 
     public void stopBackgroundThread() {
@@ -657,18 +790,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 Log.e("NeurotechnologyService", "Erro ao parar a thread de fundo", e);
             }
         }
-    }
-
-    public void setBiometricClient(NBiometricClient biometricClient) {
-        this.biometricClient = biometricClient;
-    }
-
-    public void setCompletionHandler(CompletionHandler<NBiometricTask, NBiometricOperation> completionHandler) {
-        this.completionHandler = completionHandler;
-    }
-
-    public NBiometricClient getBiometricClient() {
-        return biometricClient;
     }
 
     public void closeCameraView(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
@@ -694,6 +815,18 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 Log.e("CameraError", "Erro ao fechar câmera", e);
             }
         });
+    }
+
+    public void setBiometricClient(NBiometricClient biometricClient) {
+        this.biometricClient = biometricClient;
+    }
+
+    public void setCompletionHandler(CompletionHandler<NBiometricTask, NBiometricOperation> completionHandler) {
+        this.completionHandler = completionHandler;
+    }
+
+    public NBiometricClient getBiometricClient() {
+        return biometricClient;
     }
 
     public void closeCamera() {
