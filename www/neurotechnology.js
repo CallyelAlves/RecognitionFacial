@@ -26,6 +26,10 @@ var neurotechnology = {
     closeCamera: function(successCallback, errorCallback) {
         console.log("Calling close camera.");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "closeCamera", []);
+    },
+    subscribeToEvents: function(eventCallback, errorCallback) {
+        console.log("Subscribing to plugin events");
+        cordova.exec(eventCallback, errorCallback, "Neurotechnology", "subscribeToEvents", []);
     }
 };
 

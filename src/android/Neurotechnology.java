@@ -61,6 +61,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     private int tempoMinimoEstabilidadeMs;
     private float limiteMovimentoPermitido;
     private float proporcaoMinimaRosto;
+    private CallbackContext eventCallbackContext;
 
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
@@ -94,6 +95,12 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                     return true;
                 case "closeCamera":
                     closeCameraView();
+                    return true;
+                case "subscribeToEvents":
+                    this.eventCallbackContext = callbackContext;
+                    PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+                    result.setKeepCallback(true);
+                    eventCallbackContext.sendPluginResult(result);
                     return true;
                 default:
                     return false;
@@ -254,6 +261,12 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
                     ViewGroup widget = (ViewGroup) activity.findViewById(android.R.id.content);
                     widget.removeView(view);
+
+                    if (eventCallbackContext != null) {
+                        PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, "botao_voltar_clicado");
+                        pluginResult.setKeepCallback(true);
+                        eventCallbackContext.sendPluginResult(pluginResult);
+                    }
                 });
 
             } catch (Exception e) {
