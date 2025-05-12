@@ -105,6 +105,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private Handler backgroundHandler;
     private String currentCameraId;
     private Context appContext;
+    private Bitmap ultimaImagemCompleta = null;
 
     public static void initializeLicense(Context context) {
         NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
@@ -476,14 +477,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     return;
                 }
 
-                int captureWidth = textureView.getWidth();
-                int captureHeight = textureView.getHeight();
-                Bitmap fullBitmap = textureView.getBitmap(captureWidth, captureHeight);
-
+                Bitmap fullBitmap = textureView.getBitmap();
                 if (fullBitmap == null) {
                     Log.e("Camera", "Erro: Bitmap nulo.");
                     return;
                 }
+
+                if (ultimaImagemCompleta != null && !ultimaImagemCompleta.isRecycled()) {
+                    ultimaImagemCompleta.recycle();
+                }
+                ultimaImagemCompleta = fullBitmap.copy(fullBitmap.getConfig(), false);
 
                 try {
                     RectF ovalBounds = faceOverlayView.getOvalRect();
@@ -493,14 +496,22 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         return;
                     }
 
-                    Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
+                    Bitmap croppedBitmap = Bitmap.createBitmap(
+                        fullBitmap,
+                        (int) ovalBounds.left,
+                        (int) ovalBounds.top,
+                        (int) ovalBounds.width(),
+                        (int) ovalBounds.height()
+                    );
 
-                    if (croppedBitmap == null) {
-                        Log.e("Camera", "Erro ao recortar imagem");
-                        fullBitmap.recycle();
-                        return;
-                    }
-                    fullBitmap.recycle();
+                    // Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
+
+                    // if (croppedBitmap == null) {
+                    //     Log.e("Camera", "Erro ao recortar imagem");
+                    //     fullBitmap.recycle();
+                    //     return;
+                    // }
+                    // fullBitmap.recycle();
 
                     byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
                     croppedBitmap.recycle();
@@ -680,6 +691,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                                 long duration = System.currentTimeMillis() - faceDetectedStartTime[0];
                                 if (duration >= stabilityTimeMs) {
+                                    if (ultimaImagemCompleta != null && !ultimaImagemCompleta.isRecycled()) {
+                                        ByteArrayOutputStream out = new ByteArrayOutputStream();
+                                        ultimaImagemCompleta.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                                        byte[] fullImageBytes = out.toByteArray();
+
+                                        image = NImage.fromMemory(new NBuffer(fullImageBytes), NImageFormat.getJPEG());
+                                    }
                                     activity.runOnUiThread(() -> {
                                         statusTextView.setText("Capturando imagem...");
                                         faceOverlayView.setBorderColor(Color.GREEN);
