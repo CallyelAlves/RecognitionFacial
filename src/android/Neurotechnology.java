@@ -289,8 +289,8 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
         boolean isLandscape = screenWidth > screenHeight;
 
-        float ovalWidth = (isLandscape ? screenHeight : screenWidth) * 0.7f;
-        float ovalHeight = ovalWidth * 1.8f;
+        float ovalWidth = (isLandscape ? screenHeight : screenWidth) * 0.8f;
+        float ovalHeight = ovalWidth * 1.5f;
 
         float left = (screenWidth - ovalWidth) / 2f;
         float top = (screenHeight - ovalHeight) / 2f;
