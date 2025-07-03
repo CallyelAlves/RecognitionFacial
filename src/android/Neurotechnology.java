@@ -287,15 +287,23 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         int screenWidth = metrics.widthPixels;
         int screenHeight = metrics.heightPixels;
 
-        boolean isLandscape = screenWidth > screenHeight;
+        float maxWidth = screenWidth * 0.8f;
+        float maxHeight = screenHeight * 0.8f;
 
-        float ovalWidth = (isLandscape ? screenHeight : screenWidth) * 0.8f;
-        float ovalHeight = ovalWidth * 1.5f;
+        // Proporção 3:4 (largura : altura)
+        float targetWidth = maxWidth;
+        float targetHeight = targetWidth * (4f / 3f);
 
-        float left = (screenWidth - ovalWidth) / 2f;
-        float top = (screenHeight - ovalHeight) / 2f;
+        // Se a altura ultrapassar o máximo permitido, ajusta para caber
+        if (targetHeight > maxHeight) {
+            targetHeight = maxHeight;
+            targetWidth = targetHeight * (3f / 4f);
+        }
 
-        RectF ovalRect = new RectF(left, top, left + ovalWidth, top + ovalHeight);
+        float left = (screenWidth - targetWidth) / 2f;
+        float top = (screenHeight - targetHeight) / 2f;
+
+        RectF ovalRect = new RectF(left, top, left + targetWidth, top + targetHeight);
         faceOverlayView.setOvalRect(ovalRect);
     }
 
