@@ -27,6 +27,9 @@ import com.cordova.neurotechnology.utils.AutoFitTextureView;
 import com.cordova.neurotechnology.utils.FaceOverlayView;
 import com.neurotec.biometrics.NBiometricOperation;
 import com.neurotec.biometrics.NBiometricTask;
+import com.neurotec.licensing.NLicense;
+import com.neurotec.lang.NCore;
+import com.neurotec.io.NBuffer;
 import com.neurotec.util.concurrent.CompletionHandler;
 
 import org.apache.cordova.CallbackContext;
@@ -41,6 +44,9 @@ import org.json.JSONException;
 import android.view.OrientationEventListener;
 import android.hardware.SensorManager;
 import android.view.Surface;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import br.com.nasajon.pontomobile.R;
 
@@ -82,6 +88,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                     return true;
                 case "initializeClient":
                     initializeNeurotechnologyService("initializeClient");
+                    return true;
+                case "carregarLicenca":
+                    carregarLicenca(args);
                     return true;
                 case "enrollFromBase64":
                     return enrollFromBase64(args);
@@ -126,6 +135,30 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
             callbackContext.success(method);
         } catch (Exception e) {
             callbackContext.error("Error in " + method + ": " + e.getMessage());
+        }
+    }
+
+    private void carregarLicenca(JSONArray args) {
+        try {
+            NCore.setContext(this.context);
+            String licPath = args.getString(0);
+            if (licPath.startsWith("file://")) {
+                licPath = licPath.replaceFirst("file://", "");
+            }
+            boolean isLicense = NeurotechnologyService.isLicensesObtained();
+            Log.d(TAG, "Tem licença?" + String.valueOf(isLicense));
+            if (!isLicense) {
+                boolean sucesso = NeurotechnologyService.carregarLicenca(licPath, this.context);
+                if (sucesso) {
+                    callbackContext.success("Licença ativada com sucesso");
+                } else {
+                    callbackContext.error("Falha ao obter componente após adicionar licença.");
+                }
+            } else {
+                callbackContext.success("Licença já ativada");
+            }
+        } catch (Exception e) {
+            callbackContext.error("Erro ao ativar licença: " + e.getMessage());
         }
     }
 
@@ -392,6 +425,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     }
 
     public void closeCameraView() {
+        // neurotechnologyService.release();
         if (orientationEventListener != null) {
             orientationEventListener.disable();
         }
@@ -413,6 +447,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
     @Override
     public void onDestroy() {
+        // neurotechnologyService.release();
         super.onDestroy();
         stopBackgroundThread();
     }

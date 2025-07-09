@@ -42,6 +42,8 @@ import androidx.core.app.ActivityCompat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -66,6 +68,7 @@ import com.neurotec.images.NPixelFormat;
 import com.neurotec.io.NBuffer;
 import com.neurotec.lang.NCore;
 import com.neurotec.licensing.NLicenseManager;
+import com.neurotec.licensing.NLicense;
 import com.neurotec.licensing.gui.LicensingPreferencesFragment;
 import com.neurotec.util.concurrent.CompletionHandler;
 
@@ -108,9 +111,39 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private Bitmap ultimaImagemCompleta = null;
 
     public static void initializeLicense(Context context) {
-        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
-        NCore.setContext(context);
-        new InitializationTask(context).execute();
+        // NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        // NCore.setContext(context);
+        // new InitializationTask(context).execute();
+    }
+
+    public static boolean carregarLicenca(String licPath, Context context) {
+        try {
+            // NCore.setContext(context);
+            File licFile = new File(licPath);
+
+            if (!licFile.exists()) {
+                // callbackContext.error("Arquivo de licença não encontrado em: " + licPath);
+                return false;
+            }
+
+            byte[] licBytes = Files.readAllBytes(Paths.get(licPath));
+
+            NBuffer buffer = new NBuffer(licBytes);
+
+            NLicense.add(buffer);
+
+            boolean successFaceClient = NLicense.obtain("/local", 5000, "FaceClient");
+            boolean successFaceMatcher = NLicense.obtain("/local", 5000, "FaceMatcher");
+
+            if (successFaceClient || successFaceMatcher) {
+                new InitializationTask(context).execute();
+                return true;
+            } else {
+                return false;
+            }
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     public static void initializeClient(Context context) {
@@ -352,6 +385,14 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         LicensingManager.getInstance().release();
         Log.e(LOG_TAG, "after onBackPressed : License status - "
                 + LicensingManager.getInstance().isLicensesObtained());
+    }
+
+    public static boolean isLicensesObtained() {
+        return LicensingManager.isLicensesObtained();
+    }
+
+    public static void release() {
+        LicensingManager.release();
     }
 
     private void configureTransform(AutoFitTextureView textureView, Size previewSize, int rotation, int sensorOrientation) {
