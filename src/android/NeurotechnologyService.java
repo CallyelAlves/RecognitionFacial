@@ -118,22 +118,18 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public static boolean carregarLicenca(String licPath, Context context) {
         try {
-            // NCore.setContext(context);
             File licFile = new File(licPath);
-
-            if (!licFile.exists()) {
-                // callbackContext.error("Arquivo de licença não encontrado em: " + licPath);
-                return false;
-            }
+            if (!licFile.exists()) return false;
 
             byte[] licBytes = Files.readAllBytes(Paths.get(licPath));
-
             NBuffer buffer = new NBuffer(licBytes);
-
             NLicense.add(buffer);
 
             boolean successFaceClient = NLicense.obtain("/local", 5000, "FaceClient");
             boolean successFaceMatcher = NLicense.obtain("/local", 5000, "FaceMatcher");
+
+            Log.d(LOG_TAG, "successFaceClient: " + String.valueOf(successFaceClient));
+            Log.d(LOG_TAG, "successFaceMatcher: " + String.valueOf(successFaceMatcher));
 
             if (successFaceClient || successFaceMatcher) {
                 new InitializationTask(context).execute();
