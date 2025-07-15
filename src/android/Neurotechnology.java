@@ -105,6 +105,9 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 case "closeCamera":
                     closeCameraView();
                     return true;
+                case "desativarLicenca":
+                    desativarLicenca();
+                    return true;
                 case "subscribeToEvents":
                     this.eventCallbackContext = callbackContext;
                     PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -140,7 +143,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
     private void carregarLicenca(JSONArray args) {
         try {
-            NCore.setContext(this.context);
+            // NCore.setContext(this.context);
             String licPath = args.getString(0);
             if (licPath.startsWith("file://")) {
                 licPath = licPath.replaceFirst("file://", "");
@@ -161,6 +164,14 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
         } catch (Exception e) {
             callbackContext.error("Erro ao ativar licença: " + e.getMessage());
+        }
+    }
+
+    private void desativarLicenca() {
+        try {
+            NeurotechnologyService.release();
+        } catch (Exception e) {
+            callbackContext.error("Error in desativarLicenca: " + e.getMessage());
         }
     }
 

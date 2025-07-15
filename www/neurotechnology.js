@@ -11,6 +11,10 @@ var neurotechnology = {
         console.log("Calling carregarLicenca", licenca);
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "carregarLicenca", [licenca]);
     },
+    desativarLicenca: function(successCallback, errorCallback) {
+        console.log("Calling desativarLicenca");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "desativarLicenca", []);
+    },
     enrollFromBase64: function(user, image, successCallback, errorCallback) {
         console.log("Calling enrollFromBase64 with user:", user);
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "enrollFromBase64", [user, image]);

@@ -112,7 +112,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public static void initializeLicense(Context context) {
         // NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
-        // NCore.setContext(context);
+        NCore.setContext(context);
         // new InitializationTask(context).execute();
     }
 
