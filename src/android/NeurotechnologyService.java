@@ -75,6 +75,7 @@ import com.neurotec.util.concurrent.CompletionHandler;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import com.cordova.neurotechnology.utils.Callback;
 import com.cordova.neurotechnology.utils.AuthenticationError;
@@ -110,14 +111,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private Context appContext;
     private Bitmap ultimaImagemCompleta = null;
 
-    public static void initializeLicense(Context context) {
+    public static boolean initializeLicense(Context context, JSONArray args) {
         // NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
-        NCore.setContext(context);
-        // new InitializationTask(context).execute();
-    }
-
-    public static boolean carregarLicenca(String licPath, Context context) {
         try {
+            NCore.setContext(context);
+
+            String licPath = args.getString(0);
+            if (licPath.startsWith("file://")) {
+                licPath = licPath.replaceFirst("file://", "");
+            }
+
             File licFile = new File(licPath);
             if (!licFile.exists()) return false;
 
@@ -125,18 +128,23 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             NBuffer buffer = new NBuffer(licBytes);
             NLicense.add(buffer);
 
-            boolean successFaceClient = NLicense.obtain("/local", 5000, "FaceClient");
-            boolean successFaceMatcher = NLicense.obtain("/local", 5000, "FaceMatcher");
+            String[] componentes = new String[] {
+                "FaceClient",
+                "FaceMatcher"
+            };
 
-            Log.d(LOG_TAG, "successFaceClient: " + String.valueOf(successFaceClient));
-            Log.d(LOG_TAG, "successFaceMatcher: " + String.valueOf(successFaceMatcher));
+            boolean algumSucesso = false;
+            for (String comp : componentes) {
+                boolean ok = NLicense.obtain("/local", 5000, comp);
+                Log.d("Licenca", comp + ": " + (ok ? "ativado" : "falhou"));
+                algumSucesso |= ok;
+            }
 
-            if (successFaceClient || successFaceMatcher) {
+            if (algumSucesso) {
                 new InitializationTask(context).execute();
                 return true;
-            } else {
-                return false;
             }
+            return false;
         } catch (Exception ex) {
             return false;
         }

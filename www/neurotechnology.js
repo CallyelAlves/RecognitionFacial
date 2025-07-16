@@ -1,19 +1,19 @@
 var neurotechnology = {
-    initializeLicense: function(successCallback, errorCallback) {
+    initializeLicense: function(licenca, successCallback, errorCallback) {
         console.log("Calling initialize");
-        cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeLicense", []);
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeLicense", [licenca]);
     },
     initializeClient: function(successCallback, errorCallback) {
         console.log("Calling initialize");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeClient", []);
     },
-    carregarLicenca: function(licenca, successCallback, errorCallback) {
-        console.log("Calling carregarLicenca", licenca);
-        cordova.exec(successCallback, errorCallback, "Neurotechnology", "carregarLicenca", [licenca]);
+    isLicensesObtained: function(successCallback, errorCallback) {
+        console.log("Calling isLicensesObtained");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "isLicensesObtained", []);
     },
-    desativarLicenca: function(successCallback, errorCallback) {
-        console.log("Calling desativarLicenca");
-        cordova.exec(successCallback, errorCallback, "Neurotechnology", "desativarLicenca", []);
+    release: function(successCallback, errorCallback) {
+        console.log("Calling release");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "release", []);
     },
     enrollFromBase64: function(user, image, successCallback, errorCallback) {
         console.log("Calling enrollFromBase64 with user:", user);

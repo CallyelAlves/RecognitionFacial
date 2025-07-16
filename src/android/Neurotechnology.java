@@ -84,14 +84,12 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         try {
             switch (action) {
                 case "initializeLicense":
-                    initializeNeurotechnologyService("initializeLicense");
-                    return true;
+                    initializeNeurotechnologyService("initializeLicense", args);
                 case "initializeClient":
-                    initializeNeurotechnologyService("initializeClient");
+                    initializeNeurotechnologyService("initializeClient", args);
                     return true;
-                case "carregarLicenca":
-                    carregarLicenca(args);
-                    return true;
+                case "isLicensesObtained":
+                    return isLicensesObtained();
                 case "enrollFromBase64":
                     return enrollFromBase64(args);
                 case "identifyFace":
@@ -105,8 +103,8 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 case "closeCamera":
                     closeCameraView();
                     return true;
-                case "desativarLicenca":
-                    desativarLicenca();
+                case "release":
+                    release();
                     return true;
                 case "subscribeToEvents":
                     this.eventCallbackContext = callbackContext;
@@ -124,10 +122,15 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private void initializeNeurotechnologyService(String method) {
+    private void initializeNeurotechnologyService(String method, JSONArray args) {
         try {
             if ("initializeLicense".equals(method)) {
-                NeurotechnologyService.initializeLicense(this.context);
+                boolean inicializado = NeurotechnologyService.initializeLicense(this.context, args);
+                if (inicializado) {
+                    callbackContext.success(String.valueOf(inicializado));
+                } else {
+                    callbackContext.error("Não foi possível ativar licença");
+                }
             } else if ("initializeClient".equals(method)) {
                 NeurotechnologyService.initializeClient(this.context);
             } else {
@@ -141,33 +144,19 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private void carregarLicenca(JSONArray args) {
+    private boolean isLicensesObtained() {
         try {
-            // NCore.setContext(this.context);
-            String licPath = args.getString(0);
-            if (licPath.startsWith("file://")) {
-                licPath = licPath.replaceFirst("file://", "");
-            }
-
-            if (NeurotechnologyService.isLicensesObtained()) {
-                Log.d(TAG, "Licenças já estão ativas.");
-                callbackContext.success("Licenças já estavam ativas");
-                return;
-            }
-
-            boolean sucesso = NeurotechnologyService.carregarLicenca(licPath, this.context);
-            if (sucesso) {
-                callbackContext.success("Licença ativada com sucesso");
-            } else {
-                callbackContext.error("Falha ao ativar licença");
-            }
-
+            NCore.setContext(context);
+            boolean isLicenseObtained = NeurotechnologyService.isLicensesObtained();
+            callbackContext.success(String.valueOf(isLicenseObtained));
+            return true;
         } catch (Exception e) {
-            callbackContext.error("Erro ao ativar licença: " + e.getMessage());
+            callbackContext.error("Error in isLicensesObtained: " + e.getMessage());
+            return false;
         }
     }
 
-    private void desativarLicenca() {
+    private void release() {
         try {
             NeurotechnologyService.release();
         } catch (Exception e) {
