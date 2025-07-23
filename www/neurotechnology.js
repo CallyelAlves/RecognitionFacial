@@ -27,6 +27,14 @@ var neurotechnology = {
         console.log("Calling startCamera with image.");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "startCamera", [tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto]);
     },
+    getListIds: function(successCallback, errorCallback) {
+        console.log("Calling getListIds");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "getListIds", []);
+    },
+    deleteId: function(id, successCallback, errorCallback) {
+        console.log("Calling deleteId");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "deleteId", [id]);
+    },
     cleanDB: function(successCallback, errorCallback) {
         console.log("Calling cleanDB");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "cleanDB", []);

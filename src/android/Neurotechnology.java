@@ -98,6 +98,12 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 case "startCamera":
                     startCamera(args);
                     return true;
+                case "deleteId":
+                    deleteId(args);
+                    return true;
+                case "getListIds":
+                    getListIds();
+                    return true;
                 case "cleanDB":
                     cleanDB();
                     return true;
@@ -157,6 +163,30 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
             NeurotechnologyService.release();
         } catch (Exception e) {
             callbackContext.error("Error in desativarLicenca: " + e.getMessage());
+        }
+    }
+
+    private void getListIds() {
+        try {
+            JSONArray listIds = NeurotechnologyService.getListIds();
+            callbackContext.success(String.valueOf(listIds));
+        } catch (Exception e) {
+            callbackContext.error("Error in getListIds: " + e.getMessage());
+        }
+    }
+
+    private void deleteId(JSONArray args) {
+        try {
+            String id = args.getString(0);
+            Boolean result = NeurotechnologyService.deleteId(id);
+            Log.d(TAG, String.valueOf(result));
+            if (result) {
+              callbackContext.success("colaborador excluido com sucesso. Id: " + id);
+            } else {
+                callbackContext.error("colaborador não excluido. Id: " + id);
+            }
+        } catch (Exception e) {
+            callbackContext.error("Error in deleteId: " + e.getMessage());
         }
     }
 

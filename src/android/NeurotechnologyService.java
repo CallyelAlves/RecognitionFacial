@@ -34,6 +34,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.WebView;
+import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
@@ -199,9 +200,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public static AuthenticationError enrollTemplate(NSubject subject, JSONObject userData, NImage image) {
         try {
-            String userPassword = userData.getString("nome");
-            String uniqueID = userPassword + "_" + UUID.randomUUID().toString();
-            subject.setId(uniqueID);
+            String trabalhador = userData.getString("trabalhador");
+            subject.setId(trabalhador);
 
             NImageFormat format = image.getInfo().getFormat();
             if (format == null || !format.isCanWrite()) {
@@ -776,7 +776,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             Log.e(LOG_TAG, errorMessage);
                             faceDetectedStartTime[0] = 0;
                             activity.runOnUiThread(() -> {
-                                statusTextView.setText("Erro ao detectar rosto...");
+                                statusTextView.setText("Aguardando detectar rosto...");
                                 faceOverlayView.setBorderColor(Color.RED);
                             });
                             result.setKeepCallback(true);
@@ -805,7 +805,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
     }
-
 
     private Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
         if (bitmap == null || bitmap.isRecycled()) {
@@ -913,6 +912,35 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public NBiometricClient getBiometricClient() {
         return biometricClient;
+    }
+
+    public static JSONArray getListIds() {
+        JSONArray guids = new JSONArray();
+        String[] ids = engine.listIds();
+
+        for (String id : ids) {
+            try {
+                NSubject subject = new NSubject();
+                subject.setId(id);
+                engine.get(subject);
+
+                String userDataStr = (String) subject.getProperties().get("UserData");
+                if (userDataStr != null) {
+                    JSONObject userData = new JSONObject(userDataStr);
+                    JSONObject dado = new JSONObject();
+                    dado.put("trabalhador", userData.getString("trabalhador"));
+                    dado.put("hashfoto", userData.optString("hashfoto", ""));
+                    guids.put(dado);
+                }
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Erro ao ler UserData do ID: " + id, e);
+            }
+        }
+        return guids;
+    }
+
+    public static Boolean deleteId(String id) {
+        return engine.delete(id) == NBiometricStatus.OK;
     }
 
     public void closeCamera() {
