@@ -46,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
@@ -110,43 +111,66 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private String currentCameraId;
     private Context appContext;
     private Bitmap ultimaImagemCompleta = null;
+    private static String faceClientPath = null;
+    private static String faceMatcherPath = null;
+    private static List<String> mComponents = new ArrayList<>(Arrays.asList("Biometrics.FaceExtraction", "Biometrics.FaceMatching"));
 
-    public static boolean initializeLicense(Context context, JSONArray args) {
-        // NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+    public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
             NCore.setContext(context);
+            Log.d(LOG_TAG, "ARGS JSON: " + args.toString());
 
-            String licPath = args.getString(0);
-            if (licPath.startsWith("file://")) {
-                licPath = licPath.replaceFirst("file://", "");
+            JSONArray pathArray = args.getJSONArray(0);
+
+            if (pathArray.length() == 0) {
+                callbackContext.error("Nenhum caminho de licença fornecido.");
+                return;
             }
 
-            File licFile = new File(licPath);
-            if (!licFile.exists()) return false;
+            for (int i = 0; i < pathArray.length(); i++) {
+                String path = pathArray.getString(i).replaceFirst("file://", "");
 
-            byte[] licBytes = Files.readAllBytes(Paths.get(licPath));
-            NBuffer buffer = new NBuffer(licBytes);
-            NLicense.add(buffer);
+                File licFile = new File(path);
+                if (!licFile.exists()) {
+                    Log.e(LOG_TAG, "Arquivo de licença não encontrado: " + path);
+                    continue;
+                }
 
-            String[] componentes = new String[] {
-                "FaceClient",
-                "FaceMatcher"
-            };
-
-            boolean algumSucesso = false;
-            for (String comp : componentes) {
-                boolean ok = NLicense.obtain("/local", 5000, comp);
-                Log.d("Licenca", comp + ": " + (ok ? "ativado" : "falhou"));
-                algumSucesso |= ok;
+                byte[] licBytes = Files.readAllBytes(Paths.get(path));
+                NBuffer buffer = new NBuffer(licBytes);
+                NLicense.add(buffer);
+                Log.d(LOG_TAG, "Licença adicionada com sucesso: " + path);
             }
 
-            if (algumSucesso) {
-                new InitializationTask(context).execute();
-                return true;
-            }
-            return false;
+            (new AsyncTask<Void, Void, Boolean>() {
+                @Override
+                protected Boolean doInBackground(Void... voids) {
+                    boolean result = true;
+                    for (String component : mComponents) {
+                        try {
+                            boolean ok = NLicense.obtainComponents("/local", 5000, component);
+                            Log.d(LOG_TAG, component + ": " + (ok ? "ativado" : "falhou"));
+                            result &= ok;
+                        } catch (Exception e) {
+                            Log.e(LOG_TAG, "Erro ao obter licença para " + component + ": " + e.getMessage());
+                            result = false;
+                        }
+                    }
+                    return result;
+                }
+
+                @Override
+                protected void onPostExecute(Boolean success) {
+                    if (success) {
+                        callbackContext.success("Licenças ativadas com sucesso.");
+                    } else {
+                        callbackContext.error("Falha ao ativar uma ou mais licenças.");
+                    }
+                }
+            }).execute();
         } catch (Exception ex) {
-            return false;
+            Log.e(LOG_TAG, "Erro ao carregar licenças: " + ex.getMessage(), ex);
+            callbackContext.error("Erro ao carregar licença: " + ex.getMessage());
         }
     }
 
@@ -339,56 +363,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 Log.i(LOG_TAG, "Licenses were not obtained");
                 break;
         }
-    }
-
-    final static class InitializationTask extends AsyncTask<Object, Integer, Boolean> {
-        private static final int OBTAINING_LICENSE = 2;
-        private static final int PREPARE_DATA_FILES = 3;
-        private static final int INITIALIZING_BIOMETRIC_CLIENT = 4;
-
-        private boolean isLicenseObtained = false;
-        private Context activityContext;
-
-        public InitializationTask(Context context) {
-            activityContext = context;
-        }
-
-        @Override
-        protected Boolean doInBackground(Object... params) {
-            Log.e(LOG_TAG, "InitializationTask : doInBackground");
-            publishProgress(OBTAINING_LICENSE);
-            try {
-                isLicenseObtained = LicensingManager.getInstance().obtainComponents(activityContext);
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage(), e);
-            }
-            Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
-            return true;
-        }
-
-        @Override
-        protected void onProgressUpdate(Integer... values) {
-            super.onProgressUpdate(values);
-            switch (values[0]) {
-                case PREPARE_DATA_FILES:
-                    Log.i(LOG_TAG, "Preparing data files...");
-                    break;
-                case OBTAINING_LICENSE:
-                    Log.i(LOG_TAG, "Obtaining licenses...");
-                    break;
-                case INITIALIZING_BIOMETRIC_CLIENT:
-                    Log.i(LOG_TAG, "Initializing biometric client");
-                    break;
-            }
-        }
-    }
-
-    public void onBackPressed() {
-        Log.e(LOG_TAG, "before onBackPressed : License status - "
-                + LicensingManager.getInstance().isLicensesObtained());
-        LicensingManager.getInstance().release();
-        Log.e(LOG_TAG, "after onBackPressed : License status - "
-                + LicensingManager.getInstance().isLicensesObtained());
     }
 
     public static boolean isLicensesObtained() {

@@ -84,9 +84,10 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         try {
             switch (action) {
                 case "initializeLicense":
-                    initializeNeurotechnologyService("initializeLicense", args);
+                    initializeLicense(args, callbackContext);
+                    return true;
                 case "initializeClient":
-                    initializeNeurotechnologyService("initializeClient", args);
+                    initializeClient();
                     return true;
                 case "isLicensesObtained":
                     return isLicensesObtained();
@@ -122,25 +123,20 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         }
     }
 
-    private void initializeNeurotechnologyService(String method, JSONArray args) {
+    private void initializeLicense(JSONArray args, CallbackContext callbackContext) {
         try {
-            if ("initializeLicense".equals(method)) {
-                boolean inicializado = NeurotechnologyService.initializeLicense(this.context, args);
-                if (inicializado) {
-                    callbackContext.success(String.valueOf(inicializado));
-                } else {
-                    callbackContext.error("Não foi possível ativar licença");
-                }
-            } else if ("initializeClient".equals(method)) {
-                NeurotechnologyService.initializeClient(this.context);
-            } else {
-                callbackContext.error("Invalid method: " + method);
-                return;
-            }
-
-            callbackContext.success(method);
+            NeurotechnologyService.initializeLicense(this.context, args, callbackContext);
         } catch (Exception e) {
-            callbackContext.error("Error in " + method + ": " + e.getMessage());
+            callbackContext.error("Error in initializeLicense: " + e.getMessage());
+        }
+    }
+
+    private void initializeClient() {
+        try {
+            NeurotechnologyService.initializeClient(this.context);
+            callbackContext.success("initializeClient iniciado com sucesso.");
+        } catch (Exception e) {
+            callbackContext.error("Error in initializeClient: " + e.getMessage());
         }
     }
 
