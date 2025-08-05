@@ -50,7 +50,7 @@ import java.nio.file.Paths;
 
 import br.com.nasajon.pontomobile.R;
 
-public class Neurotechnology extends CordovaPlugin implements TextureView.SurfaceTextureListener {
+public class Neurotechnology extends CordovaPlugin {
     private static final String TAG = "Neurotechnology";
 
     private CallbackContext callbackContext;
@@ -310,7 +310,7 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
                 startBackgroundThread();
 
                 textureView.setVisibility(View.VISIBLE);
-                textureView.setSurfaceTextureListener(this);
+                textureView.setSurfaceTextureListener(surfaceTextureListener);
 
                 btnBack = view.findViewById(R.id.btn_back);
                 statusTextView = view.findViewById(R.id.status_text_view);
@@ -368,62 +368,69 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
         faceOverlayView.setOvalRect(ovalRect);
     }
 
-    @Override
-    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-        Log.d(TAG, "onSurfaceTextureAvailable chamado");
+    private final TextureView.SurfaceTextureListener surfaceTextureListener = new TextureView.SurfaceTextureListener() {
+        @Override
+        public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            Log.d(TAG, "onSurfaceTextureAvailable chamado");
+            neurotechnologyService.setCompletionHandler(new CompletionHandler<NBiometricTask, NBiometricOperation>() {
+                @Override
+                public void completed(NBiometricTask task, NBiometricOperation operation) {
+                    Log.d(TAG, "Processamento concluído.");
+                }
 
-        neurotechnologyService.setCompletionHandler(new CompletionHandler<NBiometricTask, NBiometricOperation>() {
-            @Override
-            public void completed(NBiometricTask task, NBiometricOperation operation) {
-                Log.d(TAG, "Processamento concluído.");
+                @Override
+                public void failed(Throwable throwable, NBiometricOperation operation) {
+                    Log.e(TAG, "Erro no processamento", throwable);
+                }
+            });
+
+            if (textureView == null) {
+                Log.e(TAG, "textureView ainda está nulo em onSurfaceTextureAvailable");
+                return;
             }
 
-            @Override
-            public void failed(Throwable throwable, NBiometricOperation operation) {
-                Log.e(TAG, "Erro no processamento", throwable);
-            }
-        });
+            neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
+            neurotechnologyService.openCamera(activity, context, textureView, width, height);
+            neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView,
+                    tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto,
+                    new Callback() {
+                        @Override
+                        public void onSuccess(String result) {
+                            activity.runOnUiThread(() -> {
+                                btnBack.setVisibility(View.GONE);
+                                statusTextView.setVisibility(View.GONE);
+                                callbackContext.success(result);
+                                closeCameraView();
+                            });
+                        }
 
-        neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
-        neurotechnologyService.openCamera(context, textureView, backgroundHandler);
-        neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView, tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, new Callback() {
-            @Override
-            public void onSuccess(String result) {
-                activity.runOnUiThread(() -> {
-                    btnBack.setVisibility(View.GONE);
-                    statusTextView.setVisibility(View.GONE);
-                    callbackContext.success(result);
-                    closeCameraView();
-                });
-            }
-            @Override
-            public void onFailure(String errorMessage) {
-                PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, errorMessage);
-                pluginResult.setKeepCallback(true);
-                callbackContext.sendPluginResult(pluginResult);
-            }
-            @Override
-            public void sendPluginResult(PluginResult result) {
-                callbackContext.sendPluginResult(result);
-            }
-        });
-        configureTransform(textureView);
-    }
+                        @Override
+                        public void onFailure(String errorMessage) {
+                            PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, errorMessage);
+                            pluginResult.setKeepCallback(true);
+                            callbackContext.sendPluginResult(pluginResult);
+                        }
 
-    @Override
-    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-        configureTransform(textureView);
-    }
+                        @Override
+                        public void sendPluginResult(PluginResult result) {
+                            callbackContext.sendPluginResult(result);
+                        }
+                    });
+        }
 
-    @Override
-    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-        return true;
-    }
+        @Override
+        public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+            neurotechnologyService.configureTransform(activity, textureView, width, height);
+        }
 
-    @Override
-    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        Log.d(TAG, "onSurfaceTextureUpdated chamado");
-    }
+        @Override
+        public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+            return true;
+        }
+
+        @Override
+        public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
+    };
 
     private void configureTransform(TextureView textureView) {
         if (textureView == null) return;
@@ -453,7 +460,6 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
     }
 
     public void closeCameraView() {
-        // neurotechnologyService.release();
         if (orientationEventListener != null) {
             orientationEventListener.disable();
         }
@@ -475,7 +481,6 @@ public class Neurotechnology extends CordovaPlugin implements TextureView.Surfac
 
     @Override
     public void onDestroy() {
-        neurotechnologyService.release();
         super.onDestroy();
         stopBackgroundThread();
     }

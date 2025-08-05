@@ -37,9 +37,23 @@ import android.webkit.WebView;
 import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.TextView;
+import android.graphics.Point;
+import android.util.Size;
+import android.media.ImageReader;
+import android.os.Build;
+import android.hardware.display.DisplayManager;
+import android.view.Display;
+import android.content.res.Configuration;
+import android.view.WindowMetrics;
+import android.util.DisplayMetrics;
+import android.media.Image;
+import android.hardware.camera2.params.OutputConfiguration;
+import android.hardware.camera2.params.SessionConfiguration;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -52,6 +66,13 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.Collections;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Comparator;
+import java.util.concurrent.TimeUnit;
+import java.nio.ByteBuffer;
+import java.util.concurrent.Semaphore;
 
 import com.neurotec.biometrics.NBiographicDataSchema;
 import com.neurotec.biometrics.client.NBiometricClient;
@@ -84,9 +105,13 @@ import com.cordova.neurotechnology.utils.AuthenticationError;
 import com.cordova.neurotechnology.utils.AutoFitTextureView;
 import com.cordova.neurotechnology.utils.FaceOverlayView;
 import com.cordova.neurotechnology.utils.NeurotechnologyServiceResluts;
+import com.cordova.neurotechnology.utils.AppSettings;
+import com.cordova.neurotechnology.utils.CameraResolution;
 import com.cordova.neurotechnology.helpers.FaceFrame;
 import com.cordova.neurotechnology.licensing.LicensingManager;
 import com.cordova.neurotechnology.licensing.LicensingState;
+
+import com.google.android.gms.common.util.concurrent.HandlerExecutor;
 
 import br.com.nasajon.pontomobile.R;
 
@@ -98,23 +123,44 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static final int MIN_FACE_WIDTH = 350;
     private static NBiometricClient engine;
     private static final int ENROLLMENT_ACCURACY = 90;
+    private static final int BYTES_PER_RGB_PIXEL = 3;
+    private enum State {
+        CAPTURING,
+        EXTRACTION
+    }
 
     private final Object captureLock = new Object();
     private List<FaceFrame> mImageQueue = new ArrayList<>();
     private NBiometricClient biometricClient;
     private CompletionHandler<NBiometricTask, NBiometricOperation> completionHandler;
-    private CameraDevice cameraDevice;
-    private CameraCaptureSession captureSession;
     private int frameCount = 0;
     private volatile boolean isProcessingFrames = true;
-    private HandlerThread backgroundThread;
-    private Handler backgroundHandler;
-    private String currentCameraId;
     private Context appContext;
     private Bitmap ultimaImagemCompleta = null;
     private static String faceClientPath = null;
     private static String faceMatcherPath = null;
     private static List<String> mComponents = new ArrayList<>(Arrays.asList("Biometrics.FaceExtraction", "Biometrics.FaceMatching"));
+
+    private int mSensorOrientation;
+    private Size mPreviewSize;
+    private int cameraAngle;
+    private Semaphore mCameraOpenCloseLock = new Semaphore(1);
+    private String mCameraId;
+    private Handler mBackgroundCameraHandler;
+    private AutoFitTextureView mTextureView;
+    private int imageFormat;
+    private static final int MAX_PREVIEW_WIDTH = 1920;
+    private static final int MAX_PREVIEW_HEIGHT = 1080;
+    private boolean isLandscape = false;
+    private List<CameraResolution> availableResolutions = new ArrayList<>();
+    private CameraDevice mCameraDevice;
+    private ImageReader mImageReader;
+    private long lastFrameProcessed = 0;
+    private State mState = State.CAPTURING;
+    private CaptureRequest.Builder mPreviewRequestBuilder;
+    private CameraCaptureSession mCaptureSession;
+    private CaptureRequest mPreviewRequest;
+    private HandlerThread mBackgroundCameraThread;
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -373,128 +419,459 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         LicensingManager.release();
     }
 
-    private void configureTransform(AutoFitTextureView textureView, Size previewSize, int rotation, int sensorOrientation) {
-        int viewWidth = textureView.getWidth();
-        int viewHeight = textureView.getHeight();
-
-        if (viewWidth == 0 || viewHeight == 0) return;
-
-        Matrix matrix = new Matrix();
-
-        RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
-        RectF bufferRect = new RectF(0, 0, previewSize.getHeight(), previewSize.getWidth());
-
-        float centerX = viewRect.centerX();
-        float centerY = viewRect.centerY();
-
-        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
-
-        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.START);
-
-        float scaleX = (float) viewWidth / previewSize.getHeight();
-        float scaleY = (float) viewHeight / previewSize.getWidth();
-        float scale = Math.min(scaleX, scaleY);
-        matrix.postScale(scale, scale, centerX, centerY);
-
-        int totalRotation = getJpegOrientationSensor(sensorOrientation, rotation); // 0, 90, 180, 270
-        if (totalRotation != 0) {
-            matrix.postRotate(totalRotation, centerX, centerY);
-        }
-
-        textureView.setTransform(matrix);
-    }
-
-    private Size chooseOptimalSize(Size[] choices, int textureViewWidth, int textureViewHeight) {
-        double targetRatio = (double) textureViewHeight / textureViewWidth;
-        Size optimalSize = choices[0];
-        double minDiff = Double.MAX_VALUE;
-
-        for (Size option : choices) {
-            double ratio = (double) option.getWidth() / option.getHeight();
-            double diff = Math.abs(ratio - targetRatio);
-            if (diff < minDiff) {
-                minDiff = diff;
-                optimalSize = option;
-            }
-        }
-
-        return optimalSize;
-    }
-
-    public void openCamera(Context context, AutoFitTextureView textureView, Handler backgroundHandler) {
-        this.appContext = context;
-        CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+    private void createCameraPreviewSession() {
         try {
-            String cameraId = manager.getCameraIdList()[1];
-            this.currentCameraId = cameraId;
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-            Size[] outputSizes = map.getOutputSizes(SurfaceTexture.class);
-            Size previewSize = chooseOptimalSize(outputSizes, textureView.getWidth(), textureView.getHeight());
-
-            int rotation = ((WindowManager) appContext.getSystemService(Context.WINDOW_SERVICE))
-                    .getDefaultDisplay().getRotation();
-
-            int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-
-            SurfaceTexture texture = textureView.getSurfaceTexture();
-            if (texture != null && outputSizes != null && outputSizes.length > 0) {
-                texture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-                configureTransform(textureView, previewSize, rotation, sensorOrientation);
-            }
+            imageFormat = AppSettings.getImageFormat(this.appContext);
+            SurfaceTexture texture = mTextureView.getSurfaceTexture();
+            assert texture != null;
+            texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
             Surface surface = new Surface(texture);
 
-            engine.setFacesDetectLiveness(true);
-            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
+            mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), imageFormat, 2);
+            mImageReader.setOnImageAvailableListener(reader -> {
 
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
-                    != PackageManager.PERMISSION_GRANTED) {
+                try (Image img = reader.acquireLatestImage()) {
+
+                    long currentTime = System.currentTimeMillis();
+
+                    if (currentTime - lastFrameProcessed < 100) {
+                        return;
+                    }
+
+                    lastFrameProcessed = currentTime;
+
+                    if (mState == State.CAPTURING) {
+                        if (img != null) {
+
+                            if (img.getPlanes().length == 3) {
+                                //For YUV_420_888
+                                ByteBuffer buf1 = img.getPlanes()[0].getBuffer();
+                                byte[] buffer1 = new byte[buf1.capacity()];
+                                buf1.get(buffer1);
+                                ByteBuffer buf2 = img.getPlanes()[1].getBuffer();
+                                byte[] buffer2 = new byte[buf2.capacity()];
+                                buf2.get(buffer2);
+                                ByteBuffer buf3 = img.getPlanes()[2].getBuffer();
+                                byte[] buffer3 = new byte[buf3.capacity()];
+                                buf3.get(buffer3);
+
+                                synchronized (captureLock) {
+                                    if (mImageQueue.size() > 1) {
+                                        mImageQueue.remove(0);
+                                    }
+                                    FaceFrame faceFrame = new FaceFrame(buffer1, buffer2, buffer3, img.getWidth(), img.getHeight(), img.getWidth() * BYTES_PER_RGB_PIXEL, img.getPlanes()[0].getRowStride(), img.getPlanes()[0].getPixelStride(), img.getPlanes()[1].getRowStride(), img.getPlanes()[1].getPixelStride(), img.getPlanes()[2].getRowStride(), img.getPlanes()[2].getPixelStride());
+                                    mImageQueue.add(faceFrame);
+                                    captureLock.notify();
+                                }
+
+                            } else {
+                                //For JPEG
+                                ByteBuffer buf1 = img.getPlanes()[0].getBuffer();
+                                byte[] buffer1 = new byte[buf1.capacity()];
+                                buf1.get(buffer1);
+
+                                synchronized (captureLock) {
+                                    if (mImageQueue.size() > 1) {
+                                        mImageQueue.remove(0);
+                                    }
+
+                                    FaceFrame faceFrame = new FaceFrame(buffer1);
+                                    mImageQueue.add(faceFrame);
+                                    captureLock.notify();
+                                }
+                            }
+                        } else {
+                            Log.e(LOG_TAG, "Empty image");
+                        }
+                    }
+                }
+            }, mBackgroundCameraHandler);
+
+            mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mPreviewRequestBuilder.addTarget(surface);
+            mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
+
+            if (mCameraDevice != null) {
+                createCameraCaptureSession(surface);
+            }
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void createCameraCaptureSession(Surface surface) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                List<OutputConfiguration> outputConfigurations = new ArrayList<>();
+                outputConfigurations.add(new OutputConfiguration(surface));
+                outputConfigurations.add(new OutputConfiguration(mImageReader.getSurface()));
+
+                try {
+                    mCameraDevice.createCaptureSession(new SessionConfiguration(
+                            SessionConfiguration.SESSION_REGULAR,
+                            outputConfigurations,
+                            new HandlerExecutor(mBackgroundCameraHandler.getLooper()),
+                            new CameraCaptureSession.StateCallback() {
+                                @Override
+                                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                                    configureCaptureSession(cameraCaptureSession);
+                                }
+
+                                @Override
+                                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                                }
+                            }));
+                } catch (CameraAccessException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                try {
+                    mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
+                            new CameraCaptureSession.StateCallback() {
+                                @Override
+                                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                                    configureCaptureSession(cameraCaptureSession);
+                                }
+
+                                @Override
+                                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                                }
+                            }, mBackgroundCameraHandler);
+                } catch (CameraAccessException e) {
+                    e.printStackTrace();
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void startBackgroundCameraThread() {
+        mBackgroundCameraThread = new HandlerThread("CameraBackground");
+        mBackgroundCameraThread.start();
+        mBackgroundCameraHandler = new Handler(mBackgroundCameraThread.getLooper());
+    }
+
+    private void configureCaptureSession(@NonNull CameraCaptureSession cameraCaptureSession) {
+        if (mCameraDevice == null) return;
+
+        mCaptureSession = cameraCaptureSession;
+        try {
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+
+            mPreviewRequest = mPreviewRequestBuilder.build();
+            mCaptureSession.setRepeatingRequest(mPreviewRequest, null, mBackgroundCameraHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void configureTransform(Activity activity,AutoFitTextureView textureView, int viewWidth, int viewHeight) {
+        mTextureView = textureView;
+        int rotation = getDisplayRotation(activity);
+        Matrix matrix = new Matrix();
+        RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
+        RectF bufferRect = new RectF(0, 0, mPreviewSize.getHeight(), mPreviewSize.getWidth());
+        float centerX = viewRect.centerX();
+        float centerY = viewRect.centerY();
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max(
+                    (float) viewHeight / mPreviewSize.getHeight(),
+                    (float) viewWidth / mPreviewSize.getWidth());
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(90 * (rotation - 2), centerX, centerY);
+        } else if (Surface.ROTATION_180 == rotation) {
+            matrix.postRotate(180, centerX, centerY);
+        }
+        mTextureView.setTransform(matrix);
+    }
+
+    private void setUpCameraOutputs(Activity activity, Context context, int width, int height) {
+        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+        try {
+            //for (String cameraId : manager.getCameraIdList()) {
+            mCameraId = AppSettings.getCurrentCamera(context);
+            CameraCharacteristics characteristics
+                    = manager.getCameraCharacteristics(mCameraId);
+
+            Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+
+            Log.e(LOG_TAG, "setUpCameraOutputs cameraID :" + characteristics.get(CameraCharacteristics.LENS_FACING));
+            StreamConfigurationMap map = characteristics.get(
+                    CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            if (map == null) {
                 return;
             }
 
-            manager.openCamera(cameraId, new CameraDevice.StateCallback() {
-                @Override
-                public void onOpened(@NonNull CameraDevice camera) {
-                    cameraDevice = camera;
-                    try {
-                        CaptureRequest.Builder previewBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                        previewBuilder.addTarget(surface);
+            //check whether the selected imageformat from the preference is available with the device
+            int format = -1;
+            for(int size : map.getOutputFormats()){
+                if(size == imageFormat)
+                    format = imageFormat;
+            }
 
-                        cameraDevice.createCaptureSession(Collections.singletonList(surface), new CameraCaptureSession.StateCallback() {
-                            @Override
-                            public void onConfigured(@NonNull CameraCaptureSession session) {
-                                captureSession = session;
-                                try {
-                                    session.setRepeatingRequest(previewBuilder.build(), null, backgroundHandler);
-                                } catch (CameraAccessException e) {
-                                    Log.e(LOG_TAG, "Error in setRepeatingRequest", e);
-                                }
-                            }
+            Size[] allSizes = null;
+            if(format == -1){
+                allSizes = map.getOutputSizes(SurfaceTexture.class);
+            }else{
+                allSizes = map.getOutputSizes(imageFormat);
+            }
 
-                            @Override
-                            public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-                                Log.e(LOG_TAG, "CameraCaptureSession configuration failed");
-                            }
-                        }, backgroundHandler);
-                    } catch (CameraAccessException e) {
-                        Log.e(LOG_TAG, "Error in creating preview request", e);
+            Size largest = Collections.max(Arrays.asList(allSizes), new CompareSizesByArea());
+
+            int displayRotation = getDisplayRotation(activity);
+
+            //int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            boolean swappedDimensions = false;
+            switch (displayRotation) {
+                case Surface.ROTATION_0:
+                case Surface.ROTATION_180:
+                    if (mSensorOrientation == 90 || mSensorOrientation == 270) {
+                        swappedDimensions = true;
                     }
-                }
+                    break;
+                case Surface.ROTATION_90:
+                case Surface.ROTATION_270:
+                    if (mSensorOrientation == 0 || mSensorOrientation == 180) {
+                        swappedDimensions = true;
+                    }
+                    break;
+            }
 
-                @Override
-                public void onDisconnected(@NonNull CameraDevice cameraDevice) {
-                    Log.d("Camera", "onDisconnected chamado");
-                    closeCamera();
-                }
+            Point displaySize = getDisplaySize(activity);
 
-                @Override
-                public void onError(@NonNull CameraDevice cameraDevice, int error) {
-                    closeCamera();
-                }
-            }, backgroundHandler);
+            int rotatedPreviewWidth = width;
+            int rotatedPreviewHeight = height;
+            int maxPreviewWidth = displaySize.x;
+            int maxPreviewHeight = displaySize.y;
+
+
+            if (swappedDimensions) {
+                rotatedPreviewWidth = height;
+                rotatedPreviewHeight = width;
+                maxPreviewWidth = displaySize.y;
+                maxPreviewHeight = displaySize.x;
+            }
+
+            if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
+                maxPreviewWidth = MAX_PREVIEW_WIDTH;
+            }
+
+            if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
+                maxPreviewHeight = MAX_PREVIEW_HEIGHT;
+            }
+
+            int[] resolutions = AppSettings.getCamResolution2(activity);
+            if (resolutions[0] == 0 || resolutions[1] == 0) {
+                // mPreviewSize = chooseOptimalSize(allSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
+                mPreviewSize = chooseOptimalSize(map, format, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
+                AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
+            } else {
+                mPreviewSize = new Size(resolutions[0], resolutions[1]);
+            }
+
+            initializeAvailableResolutions(allSizes);
+
+            int orientation = context.getResources().getConfiguration().orientation;
+            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                isLandscape = true;
+                mTextureView.setAspectRatio(
+                        mPreviewSize.getWidth(), mPreviewSize.getHeight());
+            } else {
+                isLandscape = false;
+                mTextureView.setAspectRatio(
+                        mPreviewSize.getHeight(), mPreviewSize.getWidth());
+            }
+
+            Log.e(LOG_TAG, "setUpCameraOutputs orientation : "+ orientation);
+            Log.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " +  mPreviewSize.getWidth());
+            cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
+
+            engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
+
+            engine.setProperty("Faces.RollAngleBase", cameraAngle);
+            engine.setProperty("Faces.DetectWithPose", true);
+            engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
+
+            //mClient.setFacesQualityThreshold();
+
+            int minIOD = 100;
+            int resolution = mPreviewSize.getWidth() *  mPreviewSize.getHeight();
+            if (resolution <= 1920 * 1080) minIOD = 80;
+            if (resolution <= 800 * 600) minIOD = 50;
+            if (resolution <= 640 * 480) minIOD = 40;
+            engine.setFacesMinimalInterOcularDistance(minIOD);
+            String faceQualityThreshold = String.valueOf(AppSettings.getFaceQualityTreshold(activity));
+            engine.setFacesQualityThreshold(Byte.parseByte(faceQualityThreshold));
+            engine.setFacesDetectLiveness(true);
+            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
 
         } catch (CameraAccessException e) {
-            Log.e(LOG_TAG, "Error in openCamera", e);
+            Log.e( LOG_TAG,  e.getMessage());
+        } catch (NullPointerException e) {
+        }
+    }
+
+    private void initializeAvailableResolutions(Size[] choices) {
+        availableResolutions = new ArrayList<>();
+        for (Size size : choices) {
+            if (size.getWidth() <= MAX_PREVIEW_WIDTH && size.getHeight() <= MAX_PREVIEW_HEIGHT)
+                availableResolutions.add(new CameraResolution(size.getWidth(), size.getHeight()));
+        }
+    }
+
+    private static Point getDisplaySize(Activity activity) {
+        Point displaySize = new Point();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowManager windowManager = activity.getSystemService(WindowManager.class);
+            if (windowManager != null) {
+                WindowMetrics metrics = windowManager.getCurrentWindowMetrics();
+                Rect bounds = metrics.getBounds();
+                displaySize.set(bounds.width(), bounds.height());
+            } else {
+                throw new IllegalStateException("WindowManager is not available");
+            }
+        } else {
+            DisplayMetrics displayMetrics = new DisplayMetrics();
+            activity.getWindowManager().getDefaultDisplay().getRealMetrics(displayMetrics);
+            displaySize.set(displayMetrics.widthPixels, displayMetrics.heightPixels);
+        }
+
+        return displaySize;
+    }
+
+    public void openCamera(Activity activity, Context context, AutoFitTextureView textureView, int width, int height) {
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+//                != PackageManager.PERMISSION_GRANTED) {
+//            requestCameraPermission();
+//            return;
+//        }
+        this.appContext = context;
+        startBackgroundCameraThread();
+        setUpCameraOutputs(activity, context, width, height);
+        configureTransform(activity, textureView, width, height);
+        CameraManager manager = (CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
+        try {
+            if (!mCameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                throw new RuntimeException("Time out waiting to lock camera opening.");
+            }
+
+            manager.openCamera(mCameraId, mStateCallback, mBackgroundCameraHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted while trying to lock camera opening.", e);
+        }
+    }
+
+    private final CameraDevice.StateCallback mStateCallback = new CameraDevice.StateCallback() {
+
+        @Override
+        public void onOpened(@NonNull CameraDevice cameraDevice) {
+
+            mCameraOpenCloseLock.release();
+            mCameraDevice = cameraDevice;
+            createCameraPreviewSession();
+        }
+
+        @Override
+        public void onDisconnected(@NonNull CameraDevice cameraDevice) {
+            mCameraOpenCloseLock.release();
+            cameraDevice.close();
+            mCameraDevice = null;
+        }
+
+        @Override
+        public void onError(@NonNull CameraDevice cameraDevice, int error) {
+            mCameraOpenCloseLock.release();
+            cameraDevice.close();
+            mCameraDevice = null;
+        }
+    };
+
+    private static int getDisplayRotation(Activity activity) {
+        int displayRotation;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            DisplayManager displayManager = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
+            if (displayManager != null) {
+                Display display = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
+                if (display != null) {
+                    displayRotation = display.getRotation();
+                } else {
+                    throw new IllegalStateException("Default display is not available");
+                }
+            } else {
+                throw new IllegalStateException("DisplayManager is not available");
+            }
+        } else {
+            displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+        }
+
+        return displayRotation;
+    }
+
+    private int getEffectiveImageRotation(int facing, int sensorOrientation, int displayRotation) {
+        int degrees = displayRotation * 90;
+        int result;
+        if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
+            result = (sensorOrientation + degrees) % 360;
+            result = (360 - result) % 360;
+        } else {
+            result = (sensorOrientation - degrees + 360) % 360;
+        }
+
+        result = result > 180 ? -1 * (360 - result) : result;
+        if (facing != CameraCharacteristics.LENS_FACING_FRONT) {
+            result *= -1;
+        }
+        return result;
+    }
+
+    private static Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
+        Size[] choices = null;
+
+        if(format == -1){
+            choices = map.getOutputSizes(ImageReader.class);
+        }else{
+            choices = map.getOutputSizes(format);
+        }
+
+        List<Size> bigEnough = new ArrayList<>();
+        List<Size> notBigEnough = new ArrayList<>();
+        int w = aspectRatio.getWidth();
+        int h = aspectRatio.getHeight();
+        for (Size option : choices) {
+            if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight) {
+                if (option.getWidth() >= textureViewWidth &&
+                        option.getHeight() >= textureViewHeight) {
+                    bigEnough.add(option);
+                } else {
+                    notBigEnough.add(option);
+                }
+            }
+        }
+
+        if (bigEnough.size() > 0) {
+            return Collections.min(bigEnough, new CompareSizesByArea());
+        } else if (notBigEnough.size() > 0) {
+            return Collections.max(notBigEnough, new CompareSizesByArea());
+        } else {
+            Log.e(LOG_TAG, "Couldn't find any suitable preview size");
+            return choices[0];
+        }
+    }
+
+    static class CompareSizesByArea implements Comparator<Size> {
+
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            return Long.signum((long) lhs.getWidth() * lhs.getHeight() - (long) rhs.getWidth() * rhs.getHeight());
         }
     }
 
@@ -862,15 +1239,15 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public void stopBackgroundThread() {
-        if (backgroundHandler != null) {
-            backgroundHandler.getLooper().quitSafely();
-            backgroundHandler = null;
+        if (mBackgroundCameraHandler != null) {
+            mBackgroundCameraHandler.getLooper().quitSafely();
+            mBackgroundCameraHandler = null;
         }
-        if (backgroundThread != null) {
-            backgroundThread.quitSafely();
+        if (mBackgroundCameraThread != null) {
+            mBackgroundCameraThread.quitSafely();
             try {
-                backgroundThread.join();
-                backgroundThread = null;
+                mBackgroundCameraThread.join();
+                mBackgroundCameraThread = null;
             } catch (InterruptedException e) {
                 Log.e("NeurotechnologyService", "Erro ao parar a thread de fundo", e);
             }
@@ -946,11 +1323,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     public void closeCamera() {
         try {
             Log.d("Camera", "Fechando câmera...");
-            if (captureSession != null) {
-                captureSession.stopRepeating();
-                captureSession.abortCaptures();
-                captureSession.close();
-                captureSession = null;
+            if (mCaptureSession != null) {
+                mCaptureSession.stopRepeating();
+                mCaptureSession.abortCaptures();
+                mCaptureSession.close();
+                mCaptureSession = null;
                 Log.d("Camera", "Capture session fechada");
             }
         } catch (CameraAccessException e) {
@@ -958,9 +1335,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
 
         try {
-            if (cameraDevice != null) {
-                cameraDevice.close();
-                cameraDevice = null;
+            if (mCameraDevice != null) {
+                mCameraDevice.close();
+                mCameraDevice = null;
                 Log.d("Camera", "Camera device fechada");
             }
         } catch (Exception e) {
@@ -968,9 +1345,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
 
         try {
-            if (backgroundHandler != null) {
-                backgroundHandler.getLooper().quitSafely();
-                backgroundHandler = null;
+            if (mBackgroundCameraHandler != null) {
+                mBackgroundCameraHandler.getLooper().quitSafely();
+                mBackgroundCameraHandler = null;
             }
         } catch (Exception e) {
             Log.e("Camera", "Erro ao parar o background handler", e);

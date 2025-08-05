@@ -16,6 +16,9 @@
             </feature>
         </config-file>
 
+        <framework src="androidx.preference:preference:1.2.1" />
+        <framework src="com.google.android.gms:play-services-base:17.6.0" />
+
         <source-file src="src/android/Neurotechnology.java" target-dir="src/com/cordova/neurotechnology" />
         <source-file src="src/android/NeurotechnologyService.java" target-dir="src/com/cordova/neurotechnology" />
         <source-file src="src/android/utils/Callback.java" target-dir="src/com/cordova/neurotechnology/utils" />
@@ -23,6 +26,8 @@
         <source-file src="src/android/utils/AuthenticationError.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/AutoFitTextureView.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/FaceOverlayView.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/AppSettings.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/CameraResolution.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/helpers/FaceFrame.java" target-dir="src/com/cordova/neurotechnology/helpers" />
         <source-file src="src/android/licensing/LicensingManager.java" target-dir="src/com/cordova/neurotechnology/licensing" />
         <source-file src="src/android/licensing/LicensingState.java" target-dir="src/com/cordova/neurotechnology/licensing" />
