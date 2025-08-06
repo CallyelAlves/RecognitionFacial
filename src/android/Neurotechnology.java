@@ -274,40 +274,11 @@ public class Neurotechnology extends CordovaPlugin {
                             activity.runOnUiThread(() -> {
                                 View view = activity.findViewById(android.R.id.content);
                                 configureFaceOverlay(view); // Recalcula a oval com base na nova rotação
-                                CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
-                                try{
-                                    String cameraId = manager.getCameraIdList()[1];
-                                    CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-                                    int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-
-                                    int displayRotation = getJpegOrientationSensor(sensorOrientation, rotation);
-                                    Matrix matrix = new Matrix();
-
-                                    int viewWidth = textureView.getWidth();
-                                    int viewHeight = textureView.getHeight();
-
-                                    if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270) {
-                                        // Ajusta para modo paisagem
-                                        float centerX = viewWidth / 2f;
-                                        float centerY = viewHeight / 2f;
-                                        matrix.postRotate(displayRotation, centerX, centerY);
-                                    } else if (rotation == Surface.ROTATION_180) {
-                                        matrix.postRotate(180, viewWidth / 2f, viewHeight / 2f);
-                                    }
-
-                                    textureView.setTransform(matrix);
-                                } catch (Exception e) {
-                                    Log.e("Camera erro:", "Camera exception", e);
-                                }
+                                neurotechnologyService.configureTransform(activity, textureView, textureView.getWidth(), textureView.getHeight());
                             });
                         }
                     }
                 };
-
-                if (orientationEventListener.canDetectOrientation()) {
-                    orientationEventListener.enable();
-                }
-                startBackgroundThread();
 
                 textureView.setVisibility(View.VISIBLE);
                 textureView.setSurfaceTextureListener(surfaceTextureListener);
@@ -318,7 +289,7 @@ public class Neurotechnology extends CordovaPlugin {
                 btnBack.setOnClickListener(v -> {
 
                     neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
-                    neurotechnologyService.stopBackgroundThread();
+                    // neurotechnologyService.stopBackgroundThread();
 
                     ViewGroup widget = (ViewGroup) activity.findViewById(android.R.id.content);
                     widget.removeView(view);
@@ -416,6 +387,7 @@ public class Neurotechnology extends CordovaPlugin {
                             callbackContext.sendPluginResult(result);
                         }
                     });
+            // neurotechnologyService.configureTransform(activity, width, height);
         }
 
         @Override
@@ -465,23 +437,10 @@ public class Neurotechnology extends CordovaPlugin {
         }
         neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
     }
-    private void startBackgroundThread() {
-        backgroundThread = new HandlerThread("CameraBackground");
-        backgroundThread.start();
-        backgroundHandler = new Handler(backgroundThread.getLooper());
-    }
-
-    private void stopBackgroundThread() {
-        if (backgroundThread != null) {
-            backgroundThread.quitSafely();
-            backgroundThread = null;
-            backgroundHandler = null;
-        }
-    }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        stopBackgroundThread();
+        neurotechnologyService.stopBackgroundThread();
     }
 }
