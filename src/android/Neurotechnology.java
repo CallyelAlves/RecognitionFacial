@@ -89,6 +89,9 @@ public class Neurotechnology extends CordovaPlugin {
                 case "initializeClient":
                     initializeClient();
                     return true;
+                case "initializeLicenseTrialMode":
+                    initializeLicenseTrialMode(callbackContext);
+                    return true;
                 case "isLicensesObtained":
                     return isLicensesObtained();
                 case "enrollFromBase64":
@@ -143,6 +146,14 @@ public class Neurotechnology extends CordovaPlugin {
             callbackContext.success("initializeClient iniciado com sucesso.");
         } catch (Exception e) {
             callbackContext.error("Error in initializeClient: " + e.getMessage());
+        }
+    }
+
+    private void initializeLicenseTrialMode(CallbackContext callbackContext) {
+        try {
+            NeurotechnologyService.initializeLicenseTrialMode(this.context, callbackContext);
+        } catch (Exception e) {
+            callbackContext.error("Error in initializeLicenseTrialMode: " + e.getMessage());
         }
     }
 

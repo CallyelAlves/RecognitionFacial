@@ -139,7 +139,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     private int mSensorOrientation;
     private Size mPreviewSize;
-    private int cameraAngle;
+    private int cameraAngle = 0;
     private Semaphore mCameraOpenCloseLock = new Semaphore(1);
     private String mCameraId;
     private Handler mBackgroundCameraHandler;
@@ -222,6 +222,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
+    public static void initializeLicenseTrialMode(Context context, CallbackContext callbackContext) {
+        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        NCore.setContext(context);
+        new InitializationTask(context, callbackContext).execute();
+    }
+
     public static void initializeClient(Context context) {
         if (engine == null) {
             engine = new NBiometricClient();
@@ -238,6 +244,59 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
             engine.initialize();
+        }
+    }
+
+    final static class InitializationTask extends AsyncTask<Object, Integer, Boolean> {
+        private static final int OBTAINING_LICENSE = 2;
+        private static final int PREPARE_DATA_FILES = 3;
+        private static final int INITIALIZING_BIOMETRIC_CLIENT = 4;
+
+        private boolean isLicenseObtained = false;
+        private Context activityContext;
+        private CallbackContext callContext;
+
+        public InitializationTask(Context context, CallbackContext callbackContext) {
+            activityContext = context;
+            callContext = callbackContext;
+        }
+
+        @Override
+        protected Boolean doInBackground(Object... params) {
+            Log.e(LOG_TAG, "InitializationTask : doInBackground");
+            publishProgress(OBTAINING_LICENSE);
+            try {
+                isLicenseObtained = LicensingManager.getInstance().obtainComponents(activityContext);
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage(), e);
+            }
+            Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
+            return true;
+        }
+
+        @Override
+        protected void onPostExecute(Boolean success) {
+            if (success) {
+                callContext.success("Licenças ativadas com sucesso.");
+            } else {
+                callContext.error("Falha ao ativar uma ou mais licenças.");
+            }
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            super.onProgressUpdate(values);
+            switch (values[0]) {
+                case PREPARE_DATA_FILES:
+                    Log.i(LOG_TAG, "Preparing data files...");
+                    break;
+                case OBTAINING_LICENSE:
+                    Log.i(LOG_TAG, "Obtaining licenses...");
+                    break;
+                case INITIALIZING_BIOMETRIC_CLIENT:
+                    Log.i(LOG_TAG, "Initializing biometric client");
+                    break;
+            }
         }
     }
 
@@ -644,7 +703,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             Point displaySize = getDisplaySize(activity);
-
             int rotatedPreviewWidth = width;
             int rotatedPreviewHeight = height;
             int maxPreviewWidth = displaySize.x;
@@ -676,8 +734,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             initializeAvailableResolutions(allSizes);
-
-            int orientation = context.getResources().getConfiguration().orientation;
+            int orientation = activity.getResources().getConfiguration().orientation;
             if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 isLandscape = true;
                 mTextureView.setAspectRatio(
@@ -690,8 +747,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             Log.e(LOG_TAG, "setUpCameraOutputs orientation : "+ orientation);
             Log.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " +  mPreviewSize.getWidth());
-            cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
 
+            if (isLandscape) {
+                cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
+            }
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
 
             engine.setProperty("Faces.RollAngleBase", cameraAngle);

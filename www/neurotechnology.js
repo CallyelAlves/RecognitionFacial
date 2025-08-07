@@ -7,6 +7,10 @@ var neurotechnology = {
         console.log("Calling initialize");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeClient", []);
     },
+    initializeLicenseTrialMode: function(successCallback, errorCallback) {
+        console.log("Calling initializeLicenseTrialMode");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "initializeLicenseTrialMode", []);
+    },
     isLicensesObtained: function(successCallback, errorCallback) {
         console.log("Calling isLicensesObtained");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "isLicensesObtained", []);
