@@ -379,8 +379,6 @@ public class Neurotechnology extends CordovaPlugin {
                         @Override
                         public void onSuccess(String result) {
                             activity.runOnUiThread(() -> {
-                                btnBack.setVisibility(View.GONE);
-                                statusTextView.setVisibility(View.GONE);
                                 callbackContext.success(result);
                                 closeCameraView();
                             });
@@ -446,6 +444,8 @@ public class Neurotechnology extends CordovaPlugin {
         if (orientationEventListener != null) {
             orientationEventListener.disable();
         }
+        btnBack.setVisibility(View.GONE);
+        statusTextView.setVisibility(View.GONE);
         neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
     }
 
