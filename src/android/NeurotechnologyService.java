@@ -38,7 +38,6 @@ import android.widget.ImageButton;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.graphics.Point;
-import android.util.Size;
 import android.media.ImageReader;
 import android.os.Build;
 import android.hardware.display.DisplayManager;
@@ -47,6 +46,7 @@ import android.content.res.Configuration;
 import android.view.WindowMetrics;
 import android.util.DisplayMetrics;
 import android.media.Image;
+import android.util.Range;
 import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.SessionConfiguration;
 
@@ -162,6 +162,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private CameraCaptureSession mCaptureSession;
     private CaptureRequest mPreviewRequest;
     private HandlerThread mBackgroundCameraThread;
+    private static final String LICENSES_DIR = "Neurotechnology/Licenses";
+    private static List<String> licenseStringToken = new ArrayList<>();
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -175,26 +177,54 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 return;
             }
 
-            for (int i = 0; i < pathArray.length(); i++) {
-                String path = pathArray.getString(i).replaceFirst("file://", "");
+            List<String> components = Arrays.asList(
+                "Biometrics.FaceExtraction",
+                "Biometrics.FaceMatching"
+            );
 
-                File licFile = new File(path);
-                if (!licFile.exists()) {
-                    Log.e(LOG_TAG, "Arquivo de licença não encontrado: " + path);
-                    continue;
+            List<String> licFilePaths = new ArrayList<>();
+
+            // Carrega licenças offline se existirem ou ativa online
+            for (int i = 0; i < pathArray.length(); i++) {
+                String snPath = pathArray.getString(i).replaceFirst("file://", "");
+                File snFile = new File(snPath);
+
+                String licFileName = (i == 0) ? "FaceExtraction.lic" : "FaceMatcher.lic";
+                String licFilePath = context.getFilesDir() + "/" + licFileName;
+                licFilePaths.add(licFilePath);
+
+                if (!Files.exists(Paths.get(licFilePath))) {
+                    // Ativa online se não existir
+                    if (!snFile.exists()) {
+                        Log.e(LOG_TAG, "Arquivo .sn não encontrado: " + snPath);
+                        continue;
+                    }
+
+                    String serialContent = new String(Files.readAllBytes(snFile.toPath())).trim();
+                    String id = NLicense.generateID(null, serialContent);
+                    Log.d(LOG_TAG, "Activation ID gerado: " + id);
+
+                    String licenseString = NLicense.activateOnline(id);
+                    Log.d(LOG_TAG, "Licença ativada online. licenseString: " + licenseString);
+
+                    licenseStringToken.add(licenseString);
+
+                    Files.write(Paths.get(licFilePath), licenseString.getBytes("UTF-8"));
+                    Log.d(LOG_TAG, "Licença salva em: " + licFilePath);
                 }
 
-                byte[] licBytes = Files.readAllBytes(Paths.get(path));
+                // Adiciona licença offline
+                byte[] licBytes = Files.readAllBytes(Paths.get(licFilePath));
                 NBuffer buffer = new NBuffer(licBytes);
                 NLicense.add(buffer);
-                Log.d(LOG_TAG, "Licença adicionada com sucesso: " + path);
+                Log.d(LOG_TAG, "Licença adicionada com sucesso: " + licFilePath);
             }
 
             (new AsyncTask<Void, Void, Boolean>() {
                 @Override
                 protected Boolean doInBackground(Void... voids) {
                     boolean result = true;
-                    for (String component : mComponents) {
+                    for (String component : components) {
                         try {
                             boolean ok = NLicense.obtainComponents("/local", 5000, component);
                             Log.d(LOG_TAG, component + ": " + (ok ? "ativado" : "falhou"));
@@ -210,17 +240,78 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 @Override
                 protected void onPostExecute(Boolean success) {
                     if (success) {
-                        callbackContext.success("Licenças ativadas com sucesso.");
+                        callbackContext.success("Licenças ativadas com sucesso via serial. " + licenseStringToken);
                     } else {
                         callbackContext.error("Falha ao ativar uma ou mais licenças.");
                     }
                 }
             }).execute();
+
         } catch (Exception ex) {
             Log.e(LOG_TAG, "Erro ao carregar licenças: " + ex.getMessage(), ex);
             callbackContext.error("Erro ao carregar licença: " + ex.getMessage());
         }
     }
+
+    public static void deactivateLicenses(Context context, JSONArray args, CallbackContext callbackContext) {
+        try {
+            JSONArray pathArray = args.getJSONArray(0);
+
+            if (pathArray.length() == 0) {
+                callbackContext.error("Nenhum caminho de licença fornecido para desativação.");
+                return;
+            }
+
+            boolean allDeactivated = true;
+
+            for (int i = 0; i < pathArray.length(); i++) {
+                String snPath = pathArray.getString(i).replaceFirst("file://", "");
+                File snFile = new File(snPath);
+                if (!snFile.exists()) {
+                    Log.e(LOG_TAG, "Arquivo .sn não encontrado: " + snPath);
+                    allDeactivated = false;
+                    continue;
+                }
+
+                String serialContent = new String(Files.readAllBytes(snFile.toPath())).trim();
+                String licFileName = (i == 0) ? "FaceExtraction.lic" : "FaceMatcher.lic";
+                String licFilePath = context.getFilesDir() + "/" + licFileName;
+
+                File licFile = new File(licFilePath);
+                if (!licFile.exists()) {
+                    Log.e(LOG_TAG, "Licença offline não encontrada para serial: " + serialContent);
+                    allDeactivated = false;
+                    continue;
+                }
+
+                // Lê o conteúdo da licença
+                String licenseString = new String(Files.readAllBytes(licFile.toPath()), "UTF-8");
+
+                // Gera o Deactivation ID
+                String deactivationID = NLicense.generateDeactivationIDForLicense(licenseString);
+                Log.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
+
+                // Chama desativação online
+                NLicense.deactivateOnlineWithID(licenseString, deactivationID);
+                Log.d(LOG_TAG, "Licença desativada online para serial: " + serialContent);
+
+                // Remove o arquivo local
+                boolean deleted = licFile.delete();
+                Log.d(LOG_TAG, "Arquivo .lic deletado: " + deleted);
+            }
+
+            if (allDeactivated) {
+                callbackContext.success("Todas as licenças foram desativadas com sucesso.");
+            } else {
+                callbackContext.error("Algumas licenças não puderam ser desativadas.");
+            }
+
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Erro ao desativar licenças: " + e.getMessage(), e);
+            callbackContext.error("Erro ao desativar licenças: " + e.getMessage());
+        }
+    }
+
 
     public static void initializeLicenseTrialMode(Context context, CallbackContext callbackContext) {
         NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
@@ -618,7 +709,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
         mCaptureSession = cameraCaptureSession;
         try {
+            Size preferredSize = new Size(640, 480);
+            mPreviewRequestBuilder.set(CaptureRequest.JPEG_THUMBNAIL_SIZE, preferredSize);
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(10, 15));
 
             mPreviewRequest = mPreviewRequestBuilder.build();
             mCaptureSession.setRepeatingRequest(mPreviewRequest, null, mBackgroundCameraHandler);
@@ -727,11 +821,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             int[] resolutions = AppSettings.getCamResolution2(activity);
             if (resolutions[0] == 0 || resolutions[1] == 0) {
                 // mPreviewSize = chooseOptimalSize(allSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
-                mPreviewSize = chooseOptimalSize(map, format, width, height);
+                mPreviewSize = chooseOptimalSize(map, format, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
                 AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
             } else {
-                // mPreviewSize = new Size(resolutions[0], resolutions[1]);
-                mPreviewSize = chooseOptimalSize(map, format, width, height);
+                mPreviewSize = new Size(resolutions[0], resolutions[1]);
             }
 
             initializeAvailableResolutions(allSizes);
@@ -894,27 +987,38 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return result;
     }
 
-    private Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight) {
+    private static Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
         Size[] choices = null;
+
         if(format == -1){
             choices = map.getOutputSizes(ImageReader.class);
         }else{
             choices = map.getOutputSizes(format);
         }
-        double targetRatio = (double) textureViewHeight / textureViewWidth;
 
-        Size optimalSize = choices[0];
-        double minDiff = Double.MAX_VALUE;
-
+        List<Size> bigEnough = new ArrayList<>();
+        List<Size> notBigEnough = new ArrayList<>();
+        int w = aspectRatio.getWidth();
+        int h = aspectRatio.getHeight();
         for (Size option : choices) {
-            double ratio = (double) option.getWidth() / option.getHeight();
-            double diff = Math.abs(ratio - targetRatio);
-            if (diff < minDiff) {
-                minDiff = diff;
-                optimalSize = option;
+            if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight) {
+                if (option.getWidth() >= textureViewWidth &&
+                        option.getHeight() >= textureViewHeight) {
+                    bigEnough.add(option);
+                } else {
+                    notBigEnough.add(option);
+                }
             }
         }
-        return optimalSize;
+
+        if (bigEnough.size() > 0) {
+            return Collections.min(bigEnough, new CompareSizesByArea());
+        } else if (notBigEnough.size() > 0) {
+            return Collections.max(notBigEnough, new CompareSizesByArea());
+        } else {
+            Log.e(LOG_TAG, "Couldn't find any suitable preview size");
+            return choices[0];
+        }
     }
 
     static class CompareSizesByArea implements Comparator<Size> {

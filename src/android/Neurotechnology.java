@@ -92,6 +92,9 @@ public class Neurotechnology extends CordovaPlugin {
                 case "initializeLicenseTrialMode":
                     initializeLicenseTrialMode(callbackContext);
                     return true;
+                case "deactivateLicenses":
+                    deactivateLicenses(args, callbackContext);
+                    return true;
                 case "isLicensesObtained":
                     return isLicensesObtained();
                 case "enrollFromBase64":
@@ -152,6 +155,7 @@ public class Neurotechnology extends CordovaPlugin {
     private void initializeLicenseTrialMode(CallbackContext callbackContext) {
         try {
             NeurotechnologyService.initializeLicenseTrialMode(this.context, callbackContext);
+            // callbackContext.success("initializeLicenseTrialMode iniciado com sucesso.");
         } catch (Exception e) {
             callbackContext.error("Error in initializeLicenseTrialMode: " + e.getMessage());
         }
@@ -166,6 +170,14 @@ public class Neurotechnology extends CordovaPlugin {
         } catch (Exception e) {
             callbackContext.error("Error in isLicensesObtained: " + e.getMessage());
             return false;
+        }
+    }
+
+    private void deactivateLicenses(JSONArray args, CallbackContext callbackContext) {
+        try {
+            NeurotechnologyService.deactivateLicenses(this.context, args, callbackContext);
+        } catch (Exception e) {
+            callbackContext.error("Error in deactivateLicenses: " + e.getMessage());
         }
     }
 
@@ -317,11 +329,6 @@ public class Neurotechnology extends CordovaPlugin {
                 callbackContext.error("Erro ao iniciar câmera: " + e.getMessage());
             }
         });
-    }
-
-    private int getJpegOrientationSensor(int sensorOrientation, int deviceRotation) {
-        int[] ORIENTATIONS = {0, 90, 180, 270};
-        return (ORIENTATIONS[deviceRotation] + sensorOrientation + 270) % 360;
     }
 
     private void configureFaceOverlay(View view) {

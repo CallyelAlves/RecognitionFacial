@@ -15,6 +15,10 @@ var neurotechnology = {
         console.log("Calling isLicensesObtained");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "isLicensesObtained", []);
     },
+    deactivateLicenses: function(licenca, successCallback, errorCallback) {
+        console.log("Calling deactivateLicenses");
+        cordova.exec(successCallback, errorCallback, "Neurotechnology", "deactivateLicenses", [licenca]);
+    },
     release: function(successCallback, errorCallback) {
         console.log("Calling release");
         cordova.exec(successCallback, errorCallback, "Neurotechnology", "release", []);
