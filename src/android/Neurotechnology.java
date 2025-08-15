@@ -95,6 +95,9 @@ public class Neurotechnology extends CordovaPlugin {
                 case "deactivateLicenses":
                     deactivateLicenses(args, callbackContext);
                     return true;
+                case "generateDeactivationID":
+                    generateDeactivationID(args, callbackContext);
+                    return true;
                 case "isLicensesObtained":
                     return isLicensesObtained();
                 case "enrollFromBase64":
@@ -176,6 +179,16 @@ public class Neurotechnology extends CordovaPlugin {
     private void deactivateLicenses(JSONArray args, CallbackContext callbackContext) {
         try {
             NeurotechnologyService.deactivateLicenses(this.context, args, callbackContext);
+        } catch (Exception e) {
+            callbackContext.error("Error in deactivateLicenses: " + e.getMessage());
+        }
+    }
+
+    private void generateDeactivationID(JSONArray args, CallbackContext callbackContext) {
+        try {
+            String contentLicense = args.getString(0);
+            String result = NeurotechnologyService.generateDeactivationID(contentLicense);
+            callbackContext.success(result);
         } catch (Exception e) {
             callbackContext.error("Error in deactivateLicenses: " + e.getMessage());
         }

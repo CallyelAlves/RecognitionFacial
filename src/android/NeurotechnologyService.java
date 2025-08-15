@@ -164,6 +164,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private HandlerThread mBackgroundCameraThread;
     private static final String LICENSES_DIR = "Neurotechnology/Licenses";
     private static List<String> licenseStringToken = new ArrayList<>();
+    private static List<String> deactivationIDToken = new ArrayList<>();
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -177,6 +178,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 return;
             }
 
+            // Lista de componentes
             List<String> components = Arrays.asList(
                 "Biometrics.FaceExtraction",
                 "Biometrics.FaceMatching"
@@ -184,48 +186,63 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             List<String> licFilePaths = new ArrayList<>();
 
-            // Carrega licenças offline se existirem ou ativa online
             for (int i = 0; i < pathArray.length(); i++) {
-                String snPath = pathArray.getString(i).replaceFirst("file://", "");
-                File snFile = new File(snPath);
+                // Remove o pré-fixo file do nome do arquivo
+                String path = pathArray.getString(i).replaceFirst("file://", "");
+                File file = new File(path);
 
-                String licFileName = (i == 0) ? "FaceExtraction.lic" : "FaceMatcher.lic";
-                String licFilePath = context.getFilesDir() + "/" + licFileName;
-                licFilePaths.add(licFilePath);
-
-                if (!Files.exists(Paths.get(licFilePath))) {
-                    // Ativa online se não existir
-                    if (!snFile.exists()) {
-                        Log.e(LOG_TAG, "Arquivo .sn não encontrado: " + snPath);
-                        continue;
-                    }
-
-                    String serialContent = new String(Files.readAllBytes(snFile.toPath())).trim();
-                    String id = NLicense.generateID(null, serialContent);
-                    Log.d(LOG_TAG, "Activation ID gerado: " + id);
-
-                    String licenseString = NLicense.activateOnline(id);
-                    Log.d(LOG_TAG, "Licença ativada online. licenseString: " + licenseString);
-
-                    licenseStringToken.add(licenseString);
-
-                    Files.write(Paths.get(licFilePath), licenseString.getBytes("UTF-8"));
-                    Log.d(LOG_TAG, "Licença salva em: " + licFilePath);
+                if (!file.exists()) {
+                    Log.e(LOG_TAG, "Arquivo não encontrado: " + path);
+                    continue;
                 }
 
-                // Adiciona licença offline
-                byte[] licBytes = Files.readAllBytes(Paths.get(licFilePath));
-                NBuffer buffer = new NBuffer(licBytes);
-                NLicense.add(buffer);
-                Log.d(LOG_TAG, "Licença adicionada com sucesso: " + licFilePath);
+                // Verifica o tipo de arquivo
+                if (path.toLowerCase().endsWith(".sn")) {
+                    String licFileName = (i == 0) ? "FaceExtraction.lic" : "FaceMatcher.lic";
+                    String licFilePath = context.getFilesDir() + "/" + licFileName;
+                    licFilePaths.add(licFilePath);
+
+                    // Se não existir o arquivo .lic ativa a licença online e cria o arquivo .lic
+                    if (!Files.exists(Paths.get(licFilePath))) {
+                        String serialContent = new String(Files.readAllBytes(file.toPath())).trim();
+
+                        String id = NLicense.generateID(null, serialContent);
+                        Log.d(LOG_TAG, "Activation ID gerado: " + id);
+
+                        // Quando ativado retorna um token da ativação que é usado posteriomente para desativação, esse token é armazenado em um arquivo .lic
+                        String licenseString = NLicense.activateOnline(id);
+                        Log.d(LOG_TAG, "Licença ativada online: " + licenseString);
+
+                        licenseStringToken.add(licenseString);
+                        Files.write(Paths.get(licFilePath), licenseString.getBytes("UTF-8"));
+                        Log.d(LOG_TAG, "Licença salva em: " + licFilePath);
+                    }
+
+                    // Aqui adiciona a licença no aparelho
+                    byte[] licBytes = Files.readAllBytes(Paths.get(licFilePath));
+                    NBuffer buffer = new NBuffer(licBytes);
+                    NLicense.add(buffer);
+                    Log.d(LOG_TAG, "Licença adicionada com sucesso: " + licFilePath);
+
+                } else if (path.toLowerCase().endsWith(".lic")) {
+                    byte[] licBytes = Files.readAllBytes(file.toPath());
+                    NBuffer buffer = new NBuffer(licBytes);
+                    NLicense.add(buffer);
+                    Log.d(LOG_TAG, "Licença adicionada com sucesso: " + path);
+
+                } else {
+                    Log.w(LOG_TAG, "Tipo de arquivo não reconhecido (esperado .sn ou .lic): " + path);
+                }
             }
 
+            // Obtém os componentes
             (new AsyncTask<Void, Void, Boolean>() {
                 @Override
                 protected Boolean doInBackground(Void... voids) {
                     boolean result = true;
                     for (String component : components) {
                         try {
+                            // Carrega os componente da ativação
                             boolean ok = NLicense.obtainComponents("/local", 5000, component);
                             Log.d(LOG_TAG, component + ": " + (ok ? "ativado" : "falhou"));
                             result &= ok;
@@ -240,7 +257,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 @Override
                 protected void onPostExecute(Boolean success) {
                     if (success) {
-                        callbackContext.success("Licenças ativadas com sucesso via serial. " + licenseStringToken);
+                        callbackContext.success("Licenças ativadas com sucesso." + licenseStringToken);
                     } else {
                         callbackContext.error("Falha ao ativar uma ou mais licenças.");
                     }
@@ -288,8 +305,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 String licenseString = new String(Files.readAllBytes(licFile.toPath()), "UTF-8");
 
                 // Gera o Deactivation ID
-                String deactivationID = NLicense.generateDeactivationIDForLicense(licenseString);
+                String deactivationID = generateDeactivationID(licenseString);
                 Log.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
+                deactivationIDToken.add(deactivationID);
 
                 // Chama desativação online
                 NLicense.deactivateOnlineWithID(licenseString, deactivationID);
@@ -301,7 +319,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             if (allDeactivated) {
-                callbackContext.success("Todas as licenças foram desativadas com sucesso.");
+                callbackContext.success(String.valueOf(deactivationIDToken));
             } else {
                 callbackContext.error("Algumas licenças não puderam ser desativadas.");
             }
@@ -312,6 +330,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
+    public static String generateDeactivationID(String licenseString) throws IOException {
+        String deactivationID = NLicense.generateDeactivationIDForLicense(licenseString);
+        Log.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
+        return deactivationID;
+    }
 
     public static void initializeLicenseTrialMode(Context context, CallbackContext callbackContext) {
         NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
