@@ -938,6 +938,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 throw new RuntimeException("Time out waiting to lock camera opening.");
             }
 
+            engine.setFacesDetectLiveness(true);
+            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
+            engine.setFacesLivenessThreshold((byte) 80);
             manager.openCamera(mCameraId, mStateCallback, mBackgroundCameraHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -1239,7 +1242,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                         if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
                             NFace detectedFace = subject.getFaces().get(0);
-                            if (!detectedFace.getObjects().isEmpty()) {
+                            Byte livenessScore = detectedFace.getObjects().get(0).getLivenessScore();
+                            int score = livenessScore;
+                            Log.d("LivenessScore", String.valueOf(livenessScore));
+
+                            if (!detectedFace.getObjects().isEmpty() && (score > 80)) {
                                 int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
                                 int imageWidth = image.getWidth();
 

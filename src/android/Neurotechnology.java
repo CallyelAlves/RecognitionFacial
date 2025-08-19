@@ -464,9 +464,12 @@ public class Neurotechnology extends CordovaPlugin {
         if (orientationEventListener != null) {
             orientationEventListener.disable();
         }
-        btnBack.setVisibility(View.GONE);
-        statusTextView.setVisibility(View.GONE);
-        neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+
+        activity.runOnUiThread(() -> {
+            btnBack.setVisibility(View.GONE);
+            statusTextView.setVisibility(View.GONE);
+            neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+        });
     }
 
     @Override
