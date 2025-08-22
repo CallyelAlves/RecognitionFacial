@@ -844,10 +844,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             int[] resolutions = AppSettings.getCamResolution2(activity);
             if (resolutions[0] == 0 || resolutions[1] == 0) {
                 // mPreviewSize = chooseOptimalSize(allSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
-                mPreviewSize = chooseOptimalSize(map, format, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
+                mPreviewSize = chooseOptimalSize(map, format, width, height);
                 AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
             } else {
-                mPreviewSize = new Size(resolutions[0], resolutions[1]);
+                mPreviewSize = chooseOptimalSize(map, format, width, height);
             }
 
             initializeAvailableResolutions(allSizes);
@@ -1013,38 +1013,27 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return result;
     }
 
-    private static Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
+    private Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight) {
         Size[] choices = null;
-
         if(format == -1){
             choices = map.getOutputSizes(ImageReader.class);
         }else{
             choices = map.getOutputSizes(format);
         }
+        double targetRatio = (double) textureViewHeight / textureViewWidth;
 
-        List<Size> bigEnough = new ArrayList<>();
-        List<Size> notBigEnough = new ArrayList<>();
-        int w = aspectRatio.getWidth();
-        int h = aspectRatio.getHeight();
+        Size optimalSize = choices[0];
+        double minDiff = Double.MAX_VALUE;
+
         for (Size option : choices) {
-            if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight) {
-                if (option.getWidth() >= textureViewWidth &&
-                        option.getHeight() >= textureViewHeight) {
-                    bigEnough.add(option);
-                } else {
-                    notBigEnough.add(option);
-                }
+            double ratio = (double) option.getWidth() / option.getHeight();
+            double diff = Math.abs(ratio - targetRatio);
+            if (diff < minDiff) {
+                minDiff = diff;
+                optimalSize = option;
             }
         }
-
-        if (bigEnough.size() > 0) {
-            return Collections.min(bigEnough, new CompareSizesByArea());
-        } else if (notBigEnough.size() > 0) {
-            return Collections.max(notBigEnough, new CompareSizesByArea());
-        } else {
-            Log.e(LOG_TAG, "Couldn't find any suitable preview size");
-            return choices[0];
-        }
+        return optimalSize;
     }
 
     static class CompareSizesByArea implements Comparator<Size> {
