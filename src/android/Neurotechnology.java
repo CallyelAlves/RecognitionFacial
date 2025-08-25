@@ -67,6 +67,7 @@ public class Neurotechnology extends CordovaPlugin {
     private int tempoMinimoEstabilidadeMs;
     private float limiteMovimentoPermitido;
     private float proporcaoMinimaRosto;
+    private int livenessScore;
     private CallbackContext eventCallbackContext;
 
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
@@ -269,6 +270,7 @@ public class Neurotechnology extends CordovaPlugin {
             tempoMinimoEstabilidadeMs = args.getInt(0);
             limiteMovimentoPermitido = (float) args.getDouble(1);
             proporcaoMinimaRosto = (float) args.getDouble(2);
+            livenessScore = args.getInt(3);
         } catch (JSONException e) {
             Log.e(TAG, "Erro ao ler argumentos JSON", e);
             // callbackContext.error("Erro ao ler argumentos JSON: " + e.getMessage());
@@ -394,7 +396,7 @@ public class Neurotechnology extends CordovaPlugin {
             neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
             neurotechnologyService.openCamera(activity, context, textureView, width, height);
             neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView,
-                    tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto,
+                    tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, livenessScore,
                     new Callback() {
                         @Override
                         public void onSuccess(String result) {

@@ -1094,6 +1094,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         fullBitmap.recycle();
                         return;
                     }
+                    byte[] fullJpeg = convertBitmapToHighQualityJPEG(fullBitmap);
                     fullBitmap.recycle();
 
                     byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
@@ -1106,7 +1107,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                     int width = (int) ovalBounds.width();
                     int height = (int) ovalBounds.height();
-                    FaceFrame faceFrame = new FaceFrame(jpegData, null, null, width, height, width, 0, 0, 0, 0, 0, 0);
+                    FaceFrame faceFrame = new FaceFrame(jpegData, fullJpeg, null, width, height, width, 0, 0, 0, 0, 0, 0);
                     synchronized (captureLock) {
                         mImageQueue.add(faceFrame);
                         captureLock.notify();
@@ -1161,6 +1162,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             int stabilityTimeMs,
             float stabilityThreshold,
             float minimumFaceProportion,
+            int livenessScore,
             Callback callback
         ) {
         mImageQueue.clear();
@@ -1207,18 +1209,36 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     NImage image = null;
 
                     try {
-                        if (data.getBuffer2() != null && data.getBuffer3() != null) {
-                            image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
-                            image.copyFromYCbCrData(
-                                    new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                    new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                    new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
-                            );
-                        } else {
+                        boolean useYUV = data.getBuffer2() != null && data.getBuffer3() != null;
+
+                        if (useYUV) {
+                            int expectedSizeY = data.getRowStride1() * data.getHeight();
+                            int expectedSizeU = data.getRowStride2() * (data.getHeight() / 2);
+                            int expectedSizeV = data.getRowStride3() * (data.getHeight() / 2);
+
+                            if (data.getBuffer1().length >= expectedSizeY &&
+                                    data.getBuffer2().length >= expectedSizeU &&
+                                    data.getBuffer3().length >= expectedSizeV) {
+
+                                image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                                image.copyFromYCbCrData(
+                                        new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
+                                        new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
+                                        new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
+                                );
+
+                            } else {
+                                Log.w(LOG_TAG, "Buffers YUV insuficientes, usando JPEG como fallback.");
+                                useYUV = false;
+                            }
+                        }
+
+                        if (!useYUV) {
                             image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
                         }
+
                     } catch (IllegalArgumentException ex) {
-                        Log.e(LOG_TAG, "Formato de imagem inválido. Ignorando o frame!", ex);
+                        Log.e(LOG_TAG, "Erro ao criar imagem. Ignorando frame!", ex);
                         continue;
                     }
 
@@ -1231,11 +1251,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                         if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
                             NFace detectedFace = subject.getFaces().get(0);
-                            Byte livenessScore = detectedFace.getObjects().get(0).getLivenessScore();
-                            int score = livenessScore;
-                            Log.d("LivenessScore", String.valueOf(livenessScore));
+                            Byte liveness = detectedFace.getObjects().get(0).getLivenessScore();
+                            int score = liveness;
+                            Log.d("LivenessScore", String.valueOf(score));
 
-                            if (!detectedFace.getObjects().isEmpty() && (score > 80)) {
+                            if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
                                 int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
                                 int imageWidth = image.getWidth();
 
@@ -1246,6 +1266,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 float centerY = (detectedFace.getObjects().get(0).getBoundingRect().centerY()) / (float) image.getHeight();
 
                                 if (faceRatio < minimumFaceProportion) {
+                                    activity.runOnUiThread(() -> {
+                                        statusTextView.setText("Aproxime o rosto");
+                                        faceOverlayView.setBorderColor(Color.YELLOW);
+                                    });
                                     Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
                                     continue;
                                 }
@@ -1282,13 +1306,18 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                         statusTextView.setText("Capturando imagem...");
                                         faceOverlayView.setBorderColor(Color.GREEN);
                                     });
-                                    String base64Image = convertNImageToBase64(image);
+                                    NImage fullImage = NImage.fromMemory(new NBuffer(data.getBuffer2()), NImageFormat.getJPEG());
+                                    String base64Image = convertNImageToBase64(fullImage);
                                     isProcessingFrames = false;
                                     callback.onSuccess(base64Image);
                                     return;
                                 }
                             } else {
                                 Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                                activity.runOnUiThread(() -> {
+                                    statusTextView.setText("Rosto não detectado. LivenessScore: " + livenessScore);
+                                    faceOverlayView.setBorderColor(Color.RED);
+                                });
                                 faceDetectedStartTime[0] = 0;
                             }
                         } else {
@@ -1297,7 +1326,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             Log.e(LOG_TAG, errorMessage);
                             faceDetectedStartTime[0] = 0;
                             activity.runOnUiThread(() -> {
-                                statusTextView.setText("Aguardando detectar rosto...");
+                                statusTextView.setText("Nenhum rosto encontrado");
                                 faceOverlayView.setBorderColor(Color.RED);
                             });
                             result.setKeepCallback(true);

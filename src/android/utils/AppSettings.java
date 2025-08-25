@@ -67,7 +67,7 @@ public class AppSettings {
 
     public static  int getImageFormat(Context context){
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
-        return Integer.parseInt(String.valueOf(ImageFormat.YUV_420_888));
+        return Integer.parseInt(String.valueOf(ImageFormat.JPEG));
     }
 
 
