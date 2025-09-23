@@ -8,7 +8,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import androidx.preference.PreferenceManager;
 
-import br.com.nasajon.pontomobile.R;
+import br.com.nasajon.pontocompartilhado.R;
 
 public class AppSettings {
     public static int TYPE_ACTIVIY_ENROLL = 10;

@@ -48,7 +48,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-import br.com.nasajon.pontomobile.R;
+import br.com.nasajon.pontocompartilhado.R;
 
 public class Neurotechnology extends CordovaPlugin {
     private static final String TAG = "Neurotechnology";

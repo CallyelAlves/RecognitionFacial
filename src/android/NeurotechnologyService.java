@@ -114,7 +114,7 @@ import com.cordova.neurotechnology.licensing.LicensingState;
 
 import com.google.android.gms.common.util.concurrent.HandlerExecutor;
 
-import br.com.nasajon.pontomobile.R;
+import br.com.nasajon.pontocompartilhado.R;
 
 public class NeurotechnologyService implements LicensingManager.LicensingStateCallback {
 
