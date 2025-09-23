@@ -1167,6 +1167,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         ) {
         mImageQueue.clear();
         isProcessingFrames = true;
+        try { engine.setFacesLivenessThreshold((byte) livenessScore); } catch (Exception ignored) {}
 
         long[] faceDetectedStartTime = {0};
         // int stabilityTimeMs = 300;
@@ -1212,25 +1213,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         boolean useYUV = data.getBuffer2() != null && data.getBuffer3() != null;
 
                         if (useYUV) {
-                            int expectedSizeY = data.getRowStride1() * data.getHeight();
-                            int expectedSizeU = data.getRowStride2() * (data.getHeight() / 2);
-                            int expectedSizeV = data.getRowStride3() * (data.getHeight() / 2);
-
-                            if (data.getBuffer1().length >= expectedSizeY &&
-                                    data.getBuffer2().length >= expectedSizeU &&
-                                    data.getBuffer3().length >= expectedSizeV) {
-
-                                image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
-                                image.copyFromYCbCrData(
-                                        new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                        new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                        new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
-                                );
-
-                            } else {
-                                Log.w(LOG_TAG, "Buffers YUV insuficientes, usando JPEG como fallback.");
-                                useYUV = false;
-                            }
+                            image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                            image.copyFromYCbCrData(
+                                    new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
+                                    new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
+                                    new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
+                            );
                         }
 
                         if (!useYUV) {
@@ -1243,7 +1231,15 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     }
 
                     if (image != null) {
+                        // Detecta primeiro para garantir bounding box; depois calcula template/liveness
                         NFace nFace = engine.detectFaces(image);
+                        if (nFace == null || nFace.getObjects().isEmpty()) {
+                            activity.runOnUiThread(() -> {
+                                statusTextView.setText("Rosto não detectado");
+                                faceOverlayView.setBorderColor(Color.RED);
+                            });
+                            continue;
+                        }
                         subject.getFaces().add(nFace);
 
                         NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
@@ -1251,7 +1247,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                         if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
                             NFace detectedFace = subject.getFaces().get(0);
-                            Byte liveness = detectedFace.getObjects().get(0).getLivenessScore();
+                            // Após CREATE_TEMPLATE, os atributos (incluindo liveness) ficam em detectedFace.getObjects()[0]
+                            Byte liveness = detectedFace.getObjects().isEmpty() ? 0 : detectedFace.getObjects().get(0).getLivenessScore();
                             int score = liveness;
                             Log.d("LivenessScore", String.valueOf(score));
 
@@ -1306,8 +1303,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                         statusTextView.setText("Capturando imagem...");
                                         faceOverlayView.setBorderColor(Color.GREEN);
                                     });
-                                    NImage fullImage = NImage.fromMemory(new NBuffer(data.getBuffer2()), NImageFormat.getJPEG());
-                                    String base64Image = convertNImageToBase64(fullImage);
+                                    String base64Image = convertNImageToBase64(image);
                                     isProcessingFrames = false;
                                     callback.onSuccess(base64Image);
                                     return;
@@ -1321,16 +1317,20 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 faceDetectedStartTime[0] = 0;
                             }
                         } else {
-                            String errorMessage = "Erro no reconhecimento facial. Status: " + task.getStatus();
-                            PluginResult result = new PluginResult(PluginResult.Status.ERROR, errorMessage);
-                            Log.e(LOG_TAG, errorMessage);
+                            NBiometricStatus st = task.getStatus();
+                            Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
                             faceDetectedStartTime[0] = 0;
                             activity.runOnUiThread(() -> {
-                                statusTextView.setText("Nenhum rosto encontrado");
+                                String msg;
+                                switch (st) {
+                                    case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
+                                    case OCCLUSION: msg = "Rosto ocluído"; break;
+                                    case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
+                                    default: msg = "Ajuste seu rosto no enquadramento"; break;
+                                }
+                                statusTextView.setText(msg);
                                 faceOverlayView.setBorderColor(Color.RED);
                             });
-                            result.setKeepCallback(true);
-                            callback.sendPluginResult(result);
                         }
                     }
                 }
