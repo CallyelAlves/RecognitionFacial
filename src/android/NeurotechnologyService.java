@@ -143,6 +143,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private int mSensorOrientation;
     private Size mPreviewSize;
     private int cameraAngle = 0;
+    private int currentLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
     private Semaphore mCameraOpenCloseLock = new Semaphore(1);
     private String mCameraId;
     private Handler mBackgroundCameraHandler;
@@ -803,6 +804,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     = manager.getCameraCharacteristics(mCameraId);
 
             Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+            if (facing != null) {
+                currentLensFacing = facing;
+            }
 
             Log.e(LOG_TAG, "setUpCameraOutputs cameraID :" + characteristics.get(CameraCharacteristics.LENS_FACING));
             StreamConfigurationMap map = characteristics.get(
@@ -895,7 +899,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             if (isLandscape) {
             }
-            cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
+            cameraAngle = getEffectiveImageRotation(currentLensFacing, mSensorOrientation, displayRotation);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
 
             engine.setProperty("Faces.RollAngleBase", cameraAngle);
@@ -1043,6 +1047,24 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return result;
     }
 
+    public void updateOrientationParameters(Activity activity) {
+        if (activity == null || engine == null) {
+            return;
+        }
+
+        int displayRotation = getDisplayRotation(activity);
+        int newCameraAngle = getEffectiveImageRotation(currentLensFacing, mSensorOrientation, displayRotation);
+
+        if (newCameraAngle != cameraAngle) {
+            cameraAngle = newCameraAngle;
+            try {
+                engine.setProperty("Faces.RollAngleBase", cameraAngle);
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Erro ao atualizar Faces.RollAngleBase", e);
+            }
+        }
+    }
+
     private Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight) {
         Size[] choices = map.getOutputSizes(SurfaceTexture.class);
 
@@ -1081,76 +1103,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private int getJpegOrientationSensor(int sensorOrientation, int deviceRotation) {
         int[] ORIENTATIONS = {0, 90, 180, 270};
         return (ORIENTATIONS[deviceRotation] + sensorOrientation + 270) % 360;
-    }
-    public void startFrameProcessing(AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
-        textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-            @Override
-            public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {}
-
-            @Override
-            public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
-
-            @Override
-            public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-                Log.d("Camera", "onSurfaceTextureDestroyed chamado");
-                closeCamera();
-                return true;
-            }
-
-            @Override
-            public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-                frameCount++;
-                if (frameCount % 30 != 0) {
-                    return;
-                }
-
-                int captureWidth = textureView.getWidth();
-                int captureHeight = textureView.getHeight();
-                Bitmap fullBitmap = textureView.getBitmap(captureWidth, captureHeight);
-
-                if (fullBitmap == null) {
-                    Log.e("Camera", "Erro: Bitmap nulo.");
-                    return;
-                }
-
-                try {
-                    RectF ovalBounds = faceOverlayView.getOvalRect();
-                    if (ovalBounds == null || ovalBounds.width() <= 0 || ovalBounds.height() <= 0) {
-                        Log.e("Camera", "Oval inválida");
-                        fullBitmap.recycle();
-                        return;
-                    }
-
-                    Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
-
-                    if (croppedBitmap == null) {
-                        Log.e("Camera", "Erro ao recortar imagem");
-                        fullBitmap.recycle();
-                        return;
-                    }
-                    byte[] fullJpeg = convertBitmapToHighQualityJPEG(fullBitmap);
-                    fullBitmap.recycle();
-
-                    byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
-                    croppedBitmap.recycle();
-
-                    if (jpegData == null || jpegData.length == 0) {
-                        Log.e("Camera", "Erro: Buffer JPEG vazio.");
-                        return;
-                    }
-
-                    int width = (int) ovalBounds.width();
-                    int height = (int) ovalBounds.height();
-                    FaceFrame faceFrame = new FaceFrame(jpegData, fullJpeg, null, width, height, width, 0, 0, 0, 0, 0, 0);
-                    synchronized (captureLock) {
-                        mImageQueue.add(faceFrame);
-                        captureLock.notify();
-                    }
-                } catch (Exception e) {
-                    Log.e("Camera", "Erro ao processar frame", e);
-                }
-            }
-        });
     }
 
     private Bitmap cropToOval(Bitmap original, RectF ovalBounds) {
@@ -1590,18 +1542,31 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
             int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            Integer lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING);
 
             WindowManager windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
             int deviceOrientation = windowManager.getDefaultDisplay().getRotation();
 
             int degrees = 0;
             switch (deviceOrientation) {
-                case Surface.ROTATION_0: degrees = 0; break;
-                case Surface.ROTATION_90: degrees = 90; break;
-                case Surface.ROTATION_180: degrees = 180; break;
-                case Surface.ROTATION_270: degrees = 270; break;
+                case Surface.ROTATION_0:
+                    degrees = 0;
+                    break;
+                case Surface.ROTATION_90:
+                    degrees = 90;
+                    break;
+                case Surface.ROTATION_180:
+                    degrees = 180;
+                    break;
+                case Surface.ROTATION_270:
+                    degrees = 270;
+                    break;
             }
 
+            boolean isFrontFacing = lensFacing != null && lensFacing == CameraCharacteristics.LENS_FACING_FRONT;
+            if (isFrontFacing) {
+                return (sensorOrientation + degrees) % 360;
+            }
             return (sensorOrientation - degrees + 360) % 360;
         } catch (CameraAccessException e) {
             Log.e(LOG_TAG, "Erro ao obter rotação", e);

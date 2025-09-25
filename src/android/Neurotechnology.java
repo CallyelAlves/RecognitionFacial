@@ -310,6 +310,18 @@ public class Neurotechnology extends CordovaPlugin {
                     textureView.setLayoutParams(textureParams);
                 }
 
+                if (faceOverlayView != null) {
+                    faceOverlayView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                        int newWidth = right - left;
+                        int newHeight = bottom - top;
+                        int oldWidth = oldRight - oldLeft;
+                        int oldHeight = oldBottom - oldTop;
+                        if (newWidth != oldWidth || newHeight != oldHeight) {
+                            configureFaceOverlay(view);
+                        }
+                    });
+                }
+
                 view.post(() -> configureFaceOverlay(view));
 
                 // configureFaceOverlay(view);
@@ -326,6 +338,7 @@ public class Neurotechnology extends CordovaPlugin {
                                 View view = activity.findViewById(android.R.id.content);
                                 configureFaceOverlay(view); // Recalcula a oval com base na nova rotação
                                 neurotechnologyService.configureTransform(activity, textureView, textureView.getWidth(), textureView.getHeight());
+                                neurotechnologyService.updateOrientationParameters(activity);
                             });
                         }
                     }
@@ -360,26 +373,42 @@ public class Neurotechnology extends CordovaPlugin {
     }
 
     private void configureFaceOverlay(View view) {
-        DisplayMetrics metrics = new DisplayMetrics();
-        activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
-        int screenWidth = metrics.widthPixels;
-        int screenHeight = metrics.heightPixels;
+        int availableWidth = faceOverlayView != null ? faceOverlayView.getWidth() : 0;
+        int availableHeight = faceOverlayView != null ? faceOverlayView.getHeight() : 0;
 
-        float maxWidth = screenWidth * 0.8f;
-        float maxHeight = screenHeight * 0.8f;
-
-        // Proporção 3:4 (largura : altura)
-        float targetWidth = maxWidth;
-        float targetHeight = targetWidth * (4f / 3f);
-
-        // Se a altura ultrapassar o máximo permitido, ajusta para caber
-        if (targetHeight > maxHeight) {
-            targetHeight = maxHeight;
-            targetWidth = targetHeight * (3f / 4f);
+        if (availableWidth == 0 || availableHeight == 0) {
+            availableWidth = view != null ? view.getWidth() : 0;
+            availableHeight = view != null ? view.getHeight() : 0;
         }
 
-        float left = (screenWidth - targetWidth) / 2f;
-        float top = (screenHeight - targetHeight) / 2f;
+        if (availableWidth == 0 || availableHeight == 0) {
+            DisplayMetrics metrics = new DisplayMetrics();
+            activity.getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+            availableWidth = metrics.widthPixels;
+            availableHeight = metrics.heightPixels;
+        }
+
+        if (availableWidth == 0 || availableHeight == 0) {
+            return;
+        }
+
+        float maxWidth = availableWidth * 0.8f;
+        float maxHeight = availableHeight * 0.8f;
+
+        boolean isLandscape = availableWidth > availableHeight;
+        float aspectWidth = isLandscape ? 4f : 3f;
+        float aspectHeight = isLandscape ? 3f : 4f;
+
+        float targetWidth = maxWidth;
+        float targetHeight = targetWidth * (aspectHeight / aspectWidth);
+
+        if (targetHeight > maxHeight) {
+            targetHeight = maxHeight;
+            targetWidth = targetHeight * (aspectWidth / aspectHeight);
+        }
+
+        float left = (availableWidth - targetWidth) / 2f;
+        float top = (availableHeight - targetHeight) / 2f;
 
         RectF ovalRect = new RectF(left, top, left + targetWidth, top + targetHeight);
         faceOverlayView.setOvalRect(ovalRect);
@@ -406,7 +435,6 @@ public class Neurotechnology extends CordovaPlugin {
                 return;
             }
 
-            neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
             neurotechnologyService.openCamera(activity, context, textureView, width, height);
             neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView,
                     tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, livenessScore,
