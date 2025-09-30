@@ -6,11 +6,8 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
-import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
@@ -67,6 +64,7 @@ import java.util.Collections;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.nio.ByteBuffer;
@@ -86,6 +84,7 @@ import com.neurotec.biometrics.NLivenessMode;
 import com.neurotec.biometrics.NMatchingResult;
 import com.neurotec.biometrics.NSubject;
 import com.neurotec.biometrics.NTemplateSize;
+import com.neurotec.biometrics.NBiometricCaptureOption;
 import com.neurotec.images.NImage;
 import com.neurotec.images.NImageFormat;
 import com.neurotec.images.NPixelFormat;
@@ -112,6 +111,8 @@ import com.cordova.neurotechnology.helpers.FaceFrame;
 import com.cordova.neurotechnology.licensing.LicensingManager;
 import com.cordova.neurotechnology.licensing.LicensingState;
 
+import com.neurotec.biometrics.NBiometricCaptureOption;
+
 import com.google.android.gms.common.util.concurrent.HandlerExecutor;
 
 import br.com.nasajon.pontocompartilhado.R;
@@ -132,12 +133,15 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private int frameCount = 0;
     private volatile boolean isProcessingFrames = true;
     private Context appContext;
+    private Activity currentActivity;
     private Bitmap ultimaImagemCompleta = null;
+    private static volatile int lastCapturedOrientationDegrees = 0;
     private static String faceClientPath = null;
     private static String faceMatcherPath = null;
     private static List<String> mComponents = new ArrayList<>(Arrays.asList("Biometrics.FaceExtraction", "Biometrics.FaceMatching"));
 
     private int mSensorOrientation;
+    private int mLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
     private Size mPreviewSize;
     private int cameraAngle = 0;
     private Semaphore mCameraOpenCloseLock = new Semaphore(1);
@@ -165,6 +169,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static final String LICENSES_DIR = "Neurotechnology/Licenses";
     private static List<String> licenseStringToken = new ArrayList<>();
     private static List<String> deactivationIDToken = new ArrayList<>();
+    private static Rect lastCapturedFaceRect = null;
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -735,7 +740,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             Size preferredSize = new Size(640, 480);
             mPreviewRequestBuilder.set(CaptureRequest.JPEG_THUMBNAIL_SIZE, preferredSize);
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(10, 15));
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(15, 30));
 
             mPreviewRequest = mPreviewRequestBuilder.build();
             mCaptureSession.setRepeatingRequest(mPreviewRequest, null, mBackgroundCameraHandler);
@@ -766,43 +771,68 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         mTextureView.setTransform(matrix);
     }
 
-    private void setUpCameraOutputs(Activity activity, Context context, int width, int height) {
+    private void setUpCameraOutputs(Activity activity, Context context, int width, int height, boolean usarTraseira) {
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
-            //for (String cameraId : manager.getCameraIdList()) {
-            mCameraId = AppSettings.getCurrentCamera(context);
-            CameraCharacteristics characteristics
-                    = manager.getCameraCharacteristics(mCameraId);
+            // Descobre qual câmera usar (frontal ou traseira)
+            String selectedCameraId = null;
+            for (String cameraId : manager.getCameraIdList()) {
+                CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+                Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+
+                if (usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
+                    selectedCameraId = cameraId;
+                    Log.e(LOG_TAG, "Selecionada câmera TRASEIRA, ID: " + selectedCameraId);
+                    break;
+                } else if (!usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                    selectedCameraId = cameraId;
+                    Log.e(LOG_TAG, "Selecionada câmera FRONTAL, ID: " + selectedCameraId);
+                    break;
+                }
+            }
+
+            // Fallback: se não encontrou, pega da AppSettings
+            if (selectedCameraId == null) {
+                selectedCameraId = AppSettings.getCurrentCamera(context);
+                Log.e(LOG_TAG, "Não encontrou câmera desejada, usando da AppSettings: " + selectedCameraId);
+            }
+
+            mCameraId = selectedCameraId;
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
 
             Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+            if (facing != null) {
+                mLensFacing = facing;
+            } else {
+                mLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
+            }
 
-            Log.e(LOG_TAG, "setUpCameraOutputs cameraID :" + characteristics.get(CameraCharacteristics.LENS_FACING));
+            Log.e(LOG_TAG, "setUpCameraOutputs cameraID :" + facing);
             StreamConfigurationMap map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) {
                 return;
             }
 
-            //check whether the selected imageformat from the preference is available with the device
+            // Verifica formatos disponíveis
             int format = -1;
-            for(int size : map.getOutputFormats()){
-                if(size == imageFormat)
+            for (int size : map.getOutputFormats()) {
+                if (size == imageFormat)
                     format = imageFormat;
             }
 
-            Size[] allSizes = null;
-            if(format == -1){
+            Size[] allSizes;
+            if (format == -1) {
                 allSizes = map.getOutputSizes(SurfaceTexture.class);
-            }else{
+            } else {
                 allSizes = map.getOutputSizes(imageFormat);
             }
 
             Size largest = Collections.max(Arrays.asList(allSizes), new CompareSizesByArea());
 
             int displayRotation = getDisplayRotation(activity);
-
-            //int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
             mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+
             boolean swappedDimensions = false;
             switch (displayRotation) {
                 case Surface.ROTATION_0:
@@ -825,7 +855,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             int maxPreviewWidth = displaySize.x;
             int maxPreviewHeight = displaySize.y;
 
-
             if (swappedDimensions) {
                 rotatedPreviewWidth = height;
                 rotatedPreviewHeight = width;
@@ -843,7 +872,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             int[] resolutions = AppSettings.getCamResolution2(activity);
             if (resolutions[0] == 0 || resolutions[1] == 0) {
-                // mPreviewSize = chooseOptimalSize(allSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
                 mPreviewSize = chooseOptimalSize(map, format, width, height);
                 AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
             } else {
@@ -862,30 +890,24 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         mPreviewSize.getHeight(), mPreviewSize.getWidth());
             }
 
-            Log.e(LOG_TAG, "setUpCameraOutputs orientation : "+ orientation);
-            Log.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " +  mPreviewSize.getWidth());
+            Log.e(LOG_TAG, "setUpCameraOutputs orientation : " + orientation);
+            Log.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " + mPreviewSize.getWidth());
 
-            if (isLandscape) {
-                cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
-            }
+            cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
-
             engine.setProperty("Faces.RollAngleBase", cameraAngle);
             engine.setProperty("Faces.DetectWithPose", true);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
 
-            //mClient.setFacesQualityThreshold();
-
             int minIOD = 100;
-            int resolution = mPreviewSize.getWidth() *  mPreviewSize.getHeight();
+            int resolution = mPreviewSize.getWidth() * mPreviewSize.getHeight();
             if (resolution <= 1920 * 1080) minIOD = 80;
             if (resolution <= 800 * 600) minIOD = 50;
             if (resolution <= 640 * 480) minIOD = 40;
             engine.setFacesMinimalInterOcularDistance(minIOD);
+
             String faceQualityThreshold = String.valueOf(AppSettings.getFaceQualityTreshold(activity));
             engine.setFacesQualityThreshold(Byte.parseByte(faceQualityThreshold));
-            engine.setFacesDetectLiveness(true);
-            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
 
         } catch (CameraAccessException e) {
             Log.e( LOG_TAG,  e.getMessage());
@@ -923,14 +945,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public void openCamera(Activity activity, Context context, AutoFitTextureView textureView, int width, int height) {
-//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-//                != PackageManager.PERMISSION_GRANTED) {
-//            requestCameraPermission();
-//            return;
-//        }
         this.appContext = context;
+        this.currentActivity = activity;
+        this.mTextureView = textureView;
         startBackgroundCameraThread();
-        setUpCameraOutputs(activity, context, width, height);
+        setUpCameraOutputs(activity, context, width, height, false);
         configureTransform(activity, textureView, width, height);
         CameraManager manager = (CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
         try {
@@ -938,9 +957,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 throw new RuntimeException("Time out waiting to lock camera opening.");
             }
 
-            engine.setFacesDetectLiveness(true);
-            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
-            engine.setFacesLivenessThreshold((byte) 80);
             manager.openCamera(mCameraId, mStateCallback, mBackgroundCameraHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -1048,103 +1064,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         int[] ORIENTATIONS = {0, 90, 180, 270};
         return (ORIENTATIONS[deviceRotation] + sensorOrientation + 270) % 360;
     }
-    public void startFrameProcessing(AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
-        textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-            @Override
-            public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {}
 
-            @Override
-            public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
-
-            @Override
-            public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-                Log.d("Camera", "onSurfaceTextureDestroyed chamado");
-                closeCamera();
-                return true;
-            }
-
-            @Override
-            public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-                frameCount++;
-                if (frameCount % 30 != 0) {
-                    return;
-                }
-
-                int captureWidth = textureView.getWidth();
-                int captureHeight = textureView.getHeight();
-                Bitmap fullBitmap = textureView.getBitmap(captureWidth, captureHeight);
-
-                if (fullBitmap == null) {
-                    Log.e("Camera", "Erro: Bitmap nulo.");
-                    return;
-                }
-
-                try {
-                    RectF ovalBounds = faceOverlayView.getOvalRect();
-                    if (ovalBounds == null || ovalBounds.width() <= 0 || ovalBounds.height() <= 0) {
-                        Log.e("Camera", "Oval inválida");
-                        fullBitmap.recycle();
-                        return;
-                    }
-
-                    Bitmap croppedBitmap = cropToOval(fullBitmap, ovalBounds);
-
-                    if (croppedBitmap == null) {
-                        Log.e("Camera", "Erro ao recortar imagem");
-                        fullBitmap.recycle();
-                        return;
-                    }
-                    byte[] fullJpeg = convertBitmapToHighQualityJPEG(fullBitmap);
-                    fullBitmap.recycle();
-
-                    byte[] jpegData = convertBitmapToHighQualityJPEG(croppedBitmap);
-                    croppedBitmap.recycle();
-
-                    if (jpegData == null || jpegData.length == 0) {
-                        Log.e("Camera", "Erro: Buffer JPEG vazio.");
-                        return;
-                    }
-
-                    int width = (int) ovalBounds.width();
-                    int height = (int) ovalBounds.height();
-                    FaceFrame faceFrame = new FaceFrame(jpegData, fullJpeg, null, width, height, width, 0, 0, 0, 0, 0, 0);
-                    synchronized (captureLock) {
-                        mImageQueue.add(faceFrame);
-                        captureLock.notify();
-                    }
-                } catch (Exception e) {
-                    Log.e("Camera", "Erro ao processar frame", e);
-                }
-            }
-        });
-    }
-
-    private Bitmap cropToOval(Bitmap original, RectF ovalBounds) {
-        int width = (int) ovalBounds.width();
-        int height = (int) ovalBounds.height();
-
-        if (width <= 0 || height <= 0) {
-            Log.e(LOG_TAG, "cropToOval: largura ou altura inválida - width: " + width + ", height: " + height);
-            return null;
-        }
-
-        Bitmap croppedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(croppedBitmap);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        Path path = new Path();
-        path.addOval(new RectF(0, 0, width, height), Path.Direction.CCW);
-
-        canvas.drawColor(Color.WHITE);
-        canvas.save();
-        canvas.clipPath(path);
-        canvas.drawBitmap(original, -ovalBounds.left, -ovalBounds.top, paint);
-        canvas.restore();
-
-        return croppedBitmap;
-    }
-
-    private byte[] convertBitmapToHighQualityJPEG(Bitmap bitmap) {
+    private static byte[] convertBitmapToHighQualityJPEG(Bitmap bitmap) {
         try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
             return stream.toByteArray();
@@ -1154,20 +1075,37 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
+    private int getImageRotationDegrees(Activity activity) {
+        int displayRotation = getDisplayRotation(activity);
+        int degrees = displayRotation * 90;
+
+        if (mLensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+            return (mSensorOrientation + degrees) % 360;
+        }
+
+        return (mSensorOrientation - degrees + 360) % 360;
+    }
+
     public void processCameraFrames(
-            Activity activity, 
-            AutoFitTextureView textureView, 
-            FaceOverlayView faceOverlayView, 
+            Activity activity,
+            AutoFitTextureView textureView,
+            FaceOverlayView faceOverlayView,
             TextView statusTextView,
             int stabilityTimeMs,
             float stabilityThreshold,
             float minimumFaceProportion,
             int livenessScore,
             Callback callback
-        ) {
+    ) {
         mImageQueue.clear();
         isProcessingFrames = true;
-        try { engine.setFacesLivenessThreshold((byte) livenessScore); } catch (Exception ignored) {}
+        try {
+            engine.setFacesDetectLiveness(true);
+            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
+            engine.setFacesLivenessThreshold((byte) livenessScore);
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "Falha ao configurar parâmetros de liveness", e);
+        }
 
         long[] faceDetectedStartTime = {0};
         // int stabilityTimeMs = 300;
@@ -1175,6 +1113,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         float[] lastCenterX = {-1f};
         float[] lastCenterY = {-1f};
         // float stabilityThreshold = 0.03f;
+
+        final int rotationDegrees = getImageRotationDegrees(activity);
 
         new Thread(() -> {
             while (isProcessingFrames) {
@@ -1231,18 +1171,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     }
 
                     if (image != null) {
-                        // Detecta primeiro para garantir bounding box; depois calcula template/liveness
-                        NFace nFace = engine.detectFaces(image);
-                        if (nFace == null || nFace.getObjects().isEmpty()) {
-                            activity.runOnUiThread(() -> {
-                                statusTextView.setText("Rosto não detectado");
-                                faceOverlayView.setBorderColor(Color.RED);
-                            });
-                            continue;
-                        }
+                        NFace nFace = new NFace();
+                        nFace.setCaptureOptions(EnumSet.of(NBiometricCaptureOption.STREAM));
+                        nFace.setImage(image);
                         subject.getFaces().add(nFace);
 
-                        NBiometricTask task = engine.createTask(EnumSet.of(NBiometricOperation.CREATE_TEMPLATE), subject);
+                        EnumSet<NBiometricOperation> operations = EnumSet.of(NBiometricOperation.CREATE_TEMPLATE, NBiometricOperation.DETECT_SEGMENTS);
+                        NBiometricTask task = engine.createTask(operations, subject);
                         engine.performTask(task);
 
                         if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
@@ -1253,14 +1188,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             Log.d("LivenessScore", String.valueOf(score));
 
                             if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
-                                int faceWidth = detectedFace.getObjects().get(0).getBoundingRect().width();
+                                NLAttributes faceAttributes = detectedFace.getObjects().get(0);
+                                Rect boundingRect = faceAttributes.getBoundingRect();
+                                int faceWidth = boundingRect.width();
                                 int imageWidth = image.getWidth();
 
                                 float faceRatio = (float) faceWidth / imageWidth;
                                 Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
 
-                                float centerX = (detectedFace.getObjects().get(0).getBoundingRect().centerX()) / (float) imageWidth;
-                                float centerY = (detectedFace.getObjects().get(0).getBoundingRect().centerY()) / (float) image.getHeight();
+                                float centerX = boundingRect.centerX() / (float) imageWidth;
+                                float centerY = boundingRect.centerY() / (float) image.getHeight();
 
                                 if (faceRatio < minimumFaceProportion) {
                                     activity.runOnUiThread(() -> {
@@ -1303,7 +1240,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                         statusTextView.setText("Capturando imagem...");
                                         faceOverlayView.setBorderColor(Color.GREEN);
                                     });
-                                    String base64Image = convertNImageToBase64(image);
+                                    String base64Image = null;
+                                    base64Image = convertNImageToBase64(image);
+
                                     isProcessingFrames = false;
                                     callback.onSuccess(base64Image);
                                     return;
@@ -1338,7 +1277,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }).start();
     }
 
-    private Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
+    private static Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
         if (bitmap == null || bitmap.isRecycled()) {
             Log.e(LOG_TAG, "Bitmap nulo ou já reciclado. Não é possível rotacionar.");
             return null;
@@ -1503,5 +1442,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             Log.e(LOG_TAG, "Erro ao converter imagem para base64", e);
             return null;
         }
+    }
+
+    private String bitmapToBase64(Bitmap bitmap) {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+        byte[] byteArray = outputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP);
     }
 }

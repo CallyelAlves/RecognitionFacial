@@ -16,6 +16,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ImageButton;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.content.Context;
 import android.graphics.Matrix;
@@ -286,6 +287,11 @@ public class Neurotechnology extends CordovaPlugin {
 
                 LayoutInflater inflater = LayoutInflater.from(activity);
                 View view = inflater.inflate(R.layout.activity_main, container, false);
+                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                view.setLayoutParams(rootParams);
                 container.addView(view);
 
                 textureView = view.findViewById(R.id.texture_view);
@@ -295,6 +301,13 @@ public class Neurotechnology extends CordovaPlugin {
                     Log.e(TAG, "textureView está NULL após inflar layout");
                     callbackContext.error("textureView está NULL após inflar layout");
                     return;
+                }
+
+                ViewGroup.LayoutParams textureParams = textureView.getLayoutParams();
+                if (textureParams != null) {
+                    textureParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                    textureParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
+                    textureView.setLayoutParams(textureParams);
                 }
 
                 view.post(() -> configureFaceOverlay(view));
@@ -393,7 +406,7 @@ public class Neurotechnology extends CordovaPlugin {
                 return;
             }
 
-            neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
+            // neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
             neurotechnologyService.openCamera(activity, context, textureView, width, height);
             neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView,
                     tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, livenessScore,
