@@ -84,6 +84,7 @@ import com.neurotec.biometrics.NLivenessMode;
 import com.neurotec.biometrics.NMatchingResult;
 import com.neurotec.biometrics.NSubject;
 import com.neurotec.biometrics.NTemplateSize;
+import com.neurotec.geometry.NRect;
 import com.neurotec.biometrics.NBiometricCaptureOption;
 import com.neurotec.images.NImage;
 import com.neurotec.images.NImageFormat;
@@ -1189,7 +1190,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                             if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
                                 NLAttributes faceAttributes = detectedFace.getObjects().get(0);
-                                Rect boundingRect = faceAttributes.getBoundingRect();
+                                NRect nRect = faceAttributes.getBoundingRect();
+                                Rect boundingRect = new Rect(
+                                    nRect.left,
+                                    nRect.top,
+                                    nRect.right,
+                                    nRect.bottom
+                                );
                                 int faceWidth = boundingRect.width();
                                 int imageWidth = image.getWidth();
 
