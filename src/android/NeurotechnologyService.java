@@ -1225,9 +1225,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                             statusTextView.setText("Mantenha o rosto estável");
                                             faceOverlayView.setBorderColor(Color.YELLOW);
                                         });
-                                        lastCenterX[0] = centerX;
-                                        lastCenterY[0] = centerY;
-                                        continue;
                                     }
                                 }
                                 lastCenterX[0] = centerX;
