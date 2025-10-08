@@ -9,6 +9,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.TextureView;
@@ -48,6 +49,9 @@ import android.view.Surface;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import br.com.nasajon.pontocompartilhado.R;
 
@@ -62,6 +66,9 @@ public class Neurotechnology extends CordovaPlugin {
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
     private TextView statusTextView;
+    private TextView dateTextView;
+    private TextView weekTextView;
+    private TextView timeTextView;
     private ImageButton btnBack;
     private OrientationEventListener orientationEventListener;
     private int lastKnownRotation = -1;
@@ -72,6 +79,19 @@ public class Neurotechnology extends CordovaPlugin {
     private CallbackContext eventCallbackContext;
 
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
+
+    private final Locale ptBrLocale = new Locale("pt", "BR");
+    private final SimpleDateFormat fullDateFormatter = new SimpleDateFormat("dd 'de' MMMM 'de' yyyy", ptBrLocale);
+    private final SimpleDateFormat weekFormatter = new SimpleDateFormat("EEEE", ptBrLocale);
+    private final SimpleDateFormat timeFormatter = new SimpleDateFormat("HH:mm:ss", ptBrLocale);
+    private final Handler dateTimeHandler = new Handler(Looper.getMainLooper());
+    private final Runnable dateTimeUpdater = new Runnable() {
+        @Override
+        public void run() {
+            updateDateTimeTexts();
+            dateTimeHandler.postDelayed(this, 1000);
+        }
+    };
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -336,8 +356,14 @@ public class Neurotechnology extends CordovaPlugin {
 
                 btnBack = view.findViewById(R.id.btn_back);
                 statusTextView = view.findViewById(R.id.status_text_view);
+                dateTextView = view.findViewById(R.id.date_text_view);
+                weekTextView = view.findViewById(R.id.week_text_view);
+                timeTextView = view.findViewById(R.id.time_text_view);
+
+                startDateTimeUpdates();
 
                 btnBack.setOnClickListener(v -> {
+                    stopDateTimeUpdates();
 
                     neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
                     // neurotechnologyService.stopBackgroundThread();
@@ -357,6 +383,32 @@ public class Neurotechnology extends CordovaPlugin {
                 callbackContext.error("Erro ao iniciar câmera: " + e.getMessage());
             }
         });
+    }
+
+    private void startDateTimeUpdates() {
+        if (dateTextView == null || weekTextView == null || timeTextView == null) {
+            return;
+        }
+        dateTextView.setVisibility(View.VISIBLE);
+        weekTextView.setVisibility(View.VISIBLE);
+        timeTextView.setVisibility(View.VISIBLE);
+        updateDateTimeTexts();
+        dateTimeHandler.removeCallbacks(dateTimeUpdater);
+        dateTimeHandler.postDelayed(dateTimeUpdater, 1000);
+    }
+
+    private void stopDateTimeUpdates() {
+        dateTimeHandler.removeCallbacks(dateTimeUpdater);
+    }
+
+    private void updateDateTimeTexts() {
+        if (dateTextView == null || weekTextView == null || timeTextView == null) {
+            return;
+        }
+        Date now = new Date();
+        dateTextView.setText(fullDateFormatter.format(now).toUpperCase(ptBrLocale));
+        weekTextView.setText(weekFormatter.format(now).toUpperCase(ptBrLocale));
+        timeTextView.setText(timeFormatter.format(now));
     }
 
     private void configureFaceOverlay(View view) {
@@ -480,16 +532,36 @@ public class Neurotechnology extends CordovaPlugin {
             orientationEventListener.disable();
         }
 
+        stopDateTimeUpdates();
+
         activity.runOnUiThread(() -> {
-            btnBack.setVisibility(View.GONE);
-            statusTextView.setVisibility(View.GONE);
+            if (btnBack != null) {
+                btnBack.setVisibility(View.GONE);
+            }
+            if (statusTextView != null) {
+                statusTextView.setVisibility(View.GONE);
+            }
+            if (dateTextView != null) {
+                dateTextView.setVisibility(View.GONE);
+            }
+            if (weekTextView != null) {
+                weekTextView.setVisibility(View.GONE);
+            }
+            if (timeTextView != null) {
+                timeTextView.setVisibility(View.GONE);
+            }
             neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+            dateTextView = null;
+            weekTextView = null;
+            timeTextView = null;
+            statusTextView = null;
         });
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        stopDateTimeUpdates();
         neurotechnologyService.stopBackgroundThread();
     }
 }
