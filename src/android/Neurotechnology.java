@@ -3,6 +3,7 @@ package com.cordova.neurotechnology;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraCharacteristics;
@@ -11,13 +12,15 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.ImageButton;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.content.Context;
 import android.graphics.Matrix;
@@ -69,6 +72,7 @@ public class Neurotechnology extends CordovaPlugin {
     private TextView dateTextView;
     private TextView weekTextView;
     private TextView timeTextView;
+    private LinearLayout dateTimeContainer;
     private ImageButton btnBack;
     private OrientationEventListener orientationEventListener;
     private int lastKnownRotation = -1;
@@ -345,20 +349,25 @@ public class Neurotechnology extends CordovaPlugin {
                             activity.runOnUiThread(() -> {
                                 View view = activity.findViewById(android.R.id.content);
                                 configureFaceOverlay(view); // Recalcula a oval com base na nova rotação
+                                updateDateTimeContainerLayout(activity.getResources().getConfiguration().orientation);
                                 neurotechnologyService.configureTransform(activity, textureView, textureView.getWidth(), textureView.getHeight());
                             });
                         }
                     }
                 };
+                orientationEventListener.enable();
 
                 textureView.setVisibility(View.VISIBLE);
                 textureView.setSurfaceTextureListener(surfaceTextureListener);
 
                 btnBack = view.findViewById(R.id.btn_back);
                 statusTextView = view.findViewById(R.id.status_text_view);
+                dateTimeContainer = view.findViewById(R.id.date_time_container);
                 dateTextView = view.findViewById(R.id.date_text_view);
                 weekTextView = view.findViewById(R.id.week_text_view);
                 timeTextView = view.findViewById(R.id.time_text_view);
+
+                updateDateTimeContainerLayout(activity.getResources().getConfiguration().orientation);
 
                 startDateTimeUpdates();
 
@@ -370,6 +379,7 @@ public class Neurotechnology extends CordovaPlugin {
 
                     ViewGroup widget = (ViewGroup) activity.findViewById(android.R.id.content);
                     widget.removeView(view);
+                    dateTimeContainer = null;
 
                     if (eventCallbackContext != null) {
                         PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, "botao_voltar_clicado");
@@ -409,6 +419,68 @@ public class Neurotechnology extends CordovaPlugin {
         dateTextView.setText(fullDateFormatter.format(now).toUpperCase(ptBrLocale));
         weekTextView.setText(weekFormatter.format(now).toUpperCase(ptBrLocale));
         timeTextView.setText(timeFormatter.format(now));
+    }
+
+    private void updateDateTimeContainerLayout(int orientation) {
+        if ((dateTimeContainer == null && statusTextView == null) || activity == null) {
+            return;
+        }
+
+        if (dateTimeContainer != null) {
+            ViewGroup.LayoutParams baseParams = dateTimeContainer.getLayoutParams();
+            FrameLayout.LayoutParams layoutParams;
+            if (baseParams instanceof FrameLayout.LayoutParams) {
+                layoutParams = (FrameLayout.LayoutParams) baseParams;
+            } else {
+                layoutParams = new FrameLayout.LayoutParams(baseParams);
+            }
+
+            int topPaddingPortrait = dpToPx(60);
+            int topPaddingLandscape = dpToPx(24);
+            int bottomPadding = dpToPx(8);
+            int sidePaddingLandscape = dpToPx(30);
+
+            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                layoutParams.gravity = Gravity.TOP | Gravity.START;
+                layoutParams.setMargins(sidePaddingLandscape, 0, sidePaddingLandscape, 0);
+                dateTimeContainer.setGravity(Gravity.START);
+                dateTimeContainer.setPadding(sidePaddingLandscape, topPaddingLandscape, sidePaddingLandscape, bottomPadding);
+            } else {
+                layoutParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                layoutParams.setMargins(0, 0, 0, 0);
+                dateTimeContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+                dateTimeContainer.setPadding(0, topPaddingPortrait, 0, bottomPadding);
+            }
+
+            dateTimeContainer.setLayoutParams(layoutParams);
+        }
+
+        if (statusTextView != null) {
+            ViewGroup.LayoutParams params = statusTextView.getLayoutParams();
+            int statusTopMargin = dpToPx(16);
+
+            if (params instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams statusLayoutParams = (FrameLayout.LayoutParams) params;
+                statusLayoutParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                statusLayoutParams.topMargin = statusTopMargin;
+                statusTextView.setLayoutParams(statusLayoutParams);
+            } else if (params instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams statusLayoutParams = (LinearLayout.LayoutParams) params;
+                statusLayoutParams.gravity = Gravity.CENTER_HORIZONTAL;
+                statusLayoutParams.topMargin = statusTopMargin;
+                statusTextView.setLayoutParams(statusLayoutParams);
+            }
+            statusTextView.setGravity(Gravity.CENTER);
+            statusTextView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        }
+    }
+
+    private int dpToPx(int dp) {
+        if (activity == null) {
+            return dp;
+        }
+        float density = activity.getResources().getDisplayMetrics().density;
+        return Math.round(dp * density);
     }
 
     private void configureFaceOverlay(View view) {
@@ -555,6 +627,7 @@ public class Neurotechnology extends CordovaPlugin {
             weekTextView = null;
             timeTextView = null;
             statusTextView = null;
+            dateTimeContainer = null;
         });
     }
 
