@@ -67,6 +67,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -170,6 +171,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static List<String> licenseStringToken = new ArrayList<>();
     private static List<String> deactivationIDToken = new ArrayList<>();
     private static Rect lastCapturedFaceRect = null;
+    private final AtomicBoolean hasSentCaptureResult = new AtomicBoolean(false);
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -1099,6 +1101,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     ) {
         mImageQueue.clear();
         isProcessingFrames = true;
+        hasSentCaptureResult.set(false);
         try {
             engine.setFacesDetectLiveness(true);
             engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
@@ -1240,8 +1243,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                     String base64Image = null;
                                     base64Image = convertNImageToBase64(image);
 
-                                    isProcessingFrames = false;
-                                    callback.onSuccess(base64Image);
+                                    if (hasSentCaptureResult.compareAndSet(false, true)) {
+                                        isProcessingFrames = false;
+                                        callback.onSuccess(base64Image);
+                                    } else {
+                                        isProcessingFrames = false;
+                                        Log.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
+                                    }
                                     return;
                                 }
                             } else {

@@ -25,6 +25,7 @@ import android.widget.TextView;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.util.DisplayMetrics;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.cordova.neurotechnology.NeurotechnologyService;
 import com.cordova.neurotechnology.utils.Callback;
@@ -62,6 +63,7 @@ public class Neurotechnology extends CordovaPlugin {
     private static final String TAG = "Neurotechnology";
 
     private CallbackContext callbackContext;
+    private CallbackContext startCameraCallbackContext;
     private Context context;
     private Activity activity;
     private AutoFitTextureView textureView;
@@ -81,6 +83,7 @@ public class Neurotechnology extends CordovaPlugin {
     private float proporcaoMinimaRosto;
     private int livenessScore;
     private CallbackContext eventCallbackContext;
+    private final AtomicBoolean startCameraResultDelivered = new AtomicBoolean(false);
 
     private NeurotechnologyService neurotechnologyService = new NeurotechnologyService();
 
@@ -131,7 +134,7 @@ public class Neurotechnology extends CordovaPlugin {
                 case "identifyFace":
                     return identifyFace(args);
                 case "startCamera":
-                    startCamera(args);
+                    startCamera(args, callbackContext);
                     return true;
                 case "deleteId":
                     deleteId(args);
@@ -290,7 +293,7 @@ public class Neurotechnology extends CordovaPlugin {
         }
     }
 
-    private void startCamera(JSONArray args) {
+    private void startCamera(JSONArray args, CallbackContext cameraCallbackContext) {
         try {
             tempoMinimoEstabilidadeMs = args.getInt(0);
             limiteMovimentoPermitido = (float) args.getDouble(1);
@@ -302,6 +305,8 @@ public class Neurotechnology extends CordovaPlugin {
             return;
         }
         this.activity = cordova.getActivity();
+        this.startCameraCallbackContext = cameraCallbackContext;
+        startCameraResultDelivered.set(false);
         final ViewGroup container = activity.findViewById(android.R.id.content);
 
         activity.runOnUiThread(() -> {
@@ -323,7 +328,7 @@ public class Neurotechnology extends CordovaPlugin {
 
                 if (textureView == null) {
                     Log.e(TAG, "textureView está NULL após inflar layout");
-                    callbackContext.error("textureView está NULL após inflar layout");
+                    deliverStartCameraError("textureView está NULL após inflar layout", false);
                     return;
                 }
 
@@ -390,7 +395,7 @@ public class Neurotechnology extends CordovaPlugin {
 
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao iniciar câmera", e);
-                callbackContext.error("Erro ao iniciar câmera: " + e.getMessage());
+                deliverStartCameraError("Erro ao iniciar câmera: " + e.getMessage(), false);
             }
         });
     }
@@ -409,6 +414,51 @@ public class Neurotechnology extends CordovaPlugin {
 
     private void stopDateTimeUpdates() {
         dateTimeHandler.removeCallbacks(dateTimeUpdater);
+    }
+
+    private void deliverStartCameraSuccess(String result) {
+        if (startCameraCallbackContext == null) {
+            Log.w(TAG, "Tentativa de enviar sucesso da câmera sem callback ativo.");
+            return;
+        }
+
+        if (!startCameraResultDelivered.compareAndSet(false, true)) {
+            Log.w(TAG, "Resultado de captura já foi enviado anteriormente. Ignorando novo sucesso.");
+            return;
+        }
+
+        startCameraCallbackContext.success(result);
+        startCameraCallbackContext = null;
+    }
+
+    private void deliverStartCameraError(String message, boolean keepCallback) {
+        if (startCameraCallbackContext == null) {
+            Log.w(TAG, "Tentativa de enviar erro da câmera sem callback ativo: " + message);
+            return;
+        }
+
+        PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, message);
+        pluginResult.setKeepCallback(keepCallback);
+        startCameraCallbackContext.sendPluginResult(pluginResult);
+
+        if (!keepCallback) {
+            startCameraResultDelivered.compareAndSet(false, true);
+            startCameraCallbackContext = null;
+        }
+    }
+
+    private void deliverStartCameraPluginResult(PluginResult result) {
+        if (startCameraCallbackContext == null) {
+            Log.w(TAG, "Tentativa de enviar resultado da câmera sem callback ativo.");
+            return;
+        }
+
+        startCameraCallbackContext.sendPluginResult(result);
+
+        if (!result.getKeepCallback()) {
+            startCameraResultDelivered.compareAndSet(false, true);
+            startCameraCallbackContext = null;
+        }
     }
 
     private void updateDateTimeTexts() {
@@ -538,21 +588,19 @@ public class Neurotechnology extends CordovaPlugin {
                         @Override
                         public void onSuccess(String result) {
                             activity.runOnUiThread(() -> {
-                                callbackContext.success(result);
+                                deliverStartCameraSuccess(result);
                                 closeCameraView();
                             });
                         }
 
                         @Override
                         public void onFailure(String errorMessage) {
-                            PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, errorMessage);
-                            pluginResult.setKeepCallback(true);
-                            callbackContext.sendPluginResult(pluginResult);
+                            deliverStartCameraError(errorMessage, true);
                         }
 
                         @Override
                         public void sendPluginResult(PluginResult result) {
-                            callbackContext.sendPluginResult(result);
+                            deliverStartCameraPluginResult(result);
                         }
                     });
             // neurotechnologyService.configureTransform(activity, width, height);
