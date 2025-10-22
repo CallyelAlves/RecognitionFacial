@@ -126,6 +126,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static final int MIN_FACE_WIDTH = 350;
     private static NBiometricClient engine;
     private static final int ENROLLMENT_ACCURACY = 90;
+    private static String lastEnrollFailureReason = null;
+    private static AuthenticationError lastEnrollFailureCode = null;
 
     private final Object captureLock = new Object();
     private List<FaceFrame> mImageQueue = new ArrayList<>();
@@ -514,13 +516,56 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return resultsList;
     }
 
+    private static void recordEnrollFailure(String message, AuthenticationError errorCode, JSONObject userData, String base64Image) {
+        lastEnrollFailureReason = message;
+        lastEnrollFailureCode = errorCode;
+
+        String userDataString = userData != null ? userData.toString() : "{}";
+        Log.e(LOG_TAG, "Enrollment failure: " + message + ", errorCode=" + (errorCode != null ? errorCode.name() : "UNKNOWN"));
+        Log.e(LOG_TAG, "Enrollment failure userData: " + userDataString);
+        if (base64Image != null) {
+            int previewLength = Math.min(120, base64Image.length());
+            String preview = base64Image.substring(0, previewLength);
+            Log.d(LOG_TAG, "Enrollment failure photo base64 length=" + base64Image.length() + ", preview=" + preview);
+        }
+    }
+
+    public static String getLastEnrollFailureReason() {
+        return lastEnrollFailureReason;
+    }
+
+    public static String getLastEnrollFailureCode() {
+        return lastEnrollFailureCode != null ? lastEnrollFailureCode.name() : null;
+    }
+
     public static boolean enrollFromBase64(JSONObject userData, String base64Image) {
+        lastEnrollFailureReason = null;
+        lastEnrollFailureCode = null;
+
         try {
+            if (userData == null) {
+                recordEnrollFailure("User data is null", AuthenticationError.ENROLLMENT_ERROR, null, base64Image);
+                return false;
+            }
+
+            if (base64Image == null || base64Image.trim().isEmpty()) {
+                recordEnrollFailure("Empty Base64 image received", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
+                return false;
+            }
+
+            Log.d(LOG_TAG, "Starting enrollFromBase64 for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
+            Log.d(LOG_TAG, "Image base64 length=" + base64Image.length());
+
             byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
+            if (decodedBytes == null || decodedBytes.length == 0) {
+                recordEnrollFailure("Decoded Base64 image is empty", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
+                return false;
+            }
+
             NImage image = NImage.fromMemory(new NBuffer(decodedBytes));
 
             if (image == null) {
-                Log.e(LOG_TAG, "Invalid image provided.");
+                recordEnrollFailure("Invalid image provided", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
                 return false;
             }
 
@@ -531,17 +576,18 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 AuthenticationError result = enrollTemplate(extractSubject, userData, image);
 
                 if (result == AuthenticationError.OK) {
-                    Log.i(LOG_TAG, "Enrollment successful");
+                    Log.i(LOG_TAG, "Enrollment successful for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
                     return true;
                 } else {
-                    Log.e(LOG_TAG, "Enrollment failed with error: " + result);
+                    recordEnrollFailure("Enrollment failed with error: " + result.name(), result, userData, base64Image);
                     return false;
                 }
             } else {
-                Log.e(LOG_TAG, "No faces detected in the provided image.");
+                recordEnrollFailure("No faces detected in the provided image", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
                 return false;
             }
         } catch (Exception e) {
+            recordEnrollFailure("Error enrolling from Base64: " + e.getMessage(), AuthenticationError.ENROLLMENT_ERROR, userData, base64Image);
             Log.e(LOG_TAG, "Error enrolling from Base64: ", e);
             return false;
         }

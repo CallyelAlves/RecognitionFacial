@@ -258,6 +258,7 @@ public class Neurotechnology extends CordovaPlugin {
     private void cleanDB() {
         try {
             NeurotechnologyService.cleanDB();
+            callbackContext.success("Banco excluido com sucesso.");
         } catch (Exception e) {
             callbackContext.error("Error in enrollFromBase64: " + e.getMessage());
         }
@@ -265,18 +266,56 @@ public class Neurotechnology extends CordovaPlugin {
 
 
     private boolean enrollFromBase64(JSONArray args) {
+        JSONObject userData = null;
+        String base64Image = null;
         try {
-            JSONObject userData = args.getJSONObject(0);
-            String base64Image = args.getString(1);
+            userData = args.getJSONObject(0);
+            base64Image = args.getString(1);
+
+            Log.d(TAG, "enrollFromBase64 chamado para trabalhador=" + userData.optString("trabalhador", "")
+                    + ", codigo=" + userData.optString("codigo", "")
+                    + ", fotoBase64Length=" + (base64Image != null ? base64Image.length() : 0));
+
             boolean success = NeurotechnologyService.enrollFromBase64(userData, base64Image);
             if (success) {
+                Log.i(TAG, "Enrollment concluído com sucesso para trabalhador=" + userData.optString("trabalhador", "")
+                        + ", codigo=" + userData.optString("codigo", ""));
                 callbackContext.success("Enrollment successful");
             } else {
-                callbackContext.error("Enrollment failed");
+                String failureReason = NeurotechnologyService.getLastEnrollFailureReason();
+                String failureCode = NeurotechnologyService.getLastEnrollFailureCode();
+
+                JSONObject errorPayload = new JSONObject();
+                errorPayload.put("message", failureReason != null ? failureReason : "Enrollment failed");
+                if (failureCode != null) {
+                    errorPayload.put("errorCode", failureCode);
+                }
+                errorPayload.put("userData", userData);
+                errorPayload.put("photoBase64", base64Image);
+
+                Log.e(TAG, "Enrollment falhou para trabalhador=" + userData.optString("trabalhador", "")
+                        + ", codigo=" + userData.optString("codigo", "")
+                        + ", motivo=" + errorPayload.optString("message")
+                        + ", codigoErro=" + (failureCode != null ? failureCode : "NA"));
+
+                callbackContext.error(errorPayload);
             }
             return true;
         } catch (Exception e) {
-            callbackContext.error("Error in enrollFromBase64: " + e.getMessage());
+            Log.e(TAG, "Erro na execução de enrollFromBase64", e);
+            JSONObject errorPayload = new JSONObject();
+            try {
+                errorPayload.put("message", "Error in enrollFromBase64: " + e.getMessage());
+                if (userData != null) {
+                    errorPayload.put("userData", userData);
+                }
+                if (base64Image != null) {
+                    errorPayload.put("photoBase64", base64Image);
+                }
+            } catch (JSONException jsonException) {
+                Log.e(TAG, "Erro ao montar payload de erro do enrollFromBase64", jsonException);
+            }
+            callbackContext.error(errorPayload);
             return false;
         }
     }
