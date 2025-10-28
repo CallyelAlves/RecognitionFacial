@@ -128,6 +128,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static final int ENROLLMENT_ACCURACY = 90;
     private static String lastEnrollFailureReason = null;
     private static AuthenticationError lastEnrollFailureCode = null;
+    private static final AtomicBoolean needsEngineRecreation = new AtomicBoolean(false);
+    private static volatile Context engineContext;
 
     private final Object captureLock = new Object();
     private List<FaceFrame> mImageQueue = new ArrayList<>();
@@ -141,7 +143,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static volatile int lastCapturedOrientationDegrees = 0;
     private static String faceClientPath = null;
     private static String faceMatcherPath = null;
-    private static List<String> mComponents = new ArrayList<>(Arrays.asList("Biometrics.FaceExtraction", "Biometrics.FaceMatching"));
+    private static final List<String> REQUIRED_FACE_COMPONENTS = Collections.unmodifiableList(Arrays.asList(
+            "Biometrics.FaceExtraction",
+            "Biometrics.FaceMatching"
+    ));
+    private static final String LOCAL_LICENSE_SERVER = "/local";
+    private static final int LOCAL_LICENSE_TIMEOUT = 5000;
 
     private int mSensorOrientation;
     private int mLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
@@ -188,10 +195,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             // Lista de componentes
-            List<String> components = Arrays.asList(
-                "Biometrics.FaceExtraction",
-                "Biometrics.FaceMatching"
-            );
+            List<String> components = REQUIRED_FACE_COMPONENTS;
 
             List<String> licFilePaths = new ArrayList<>();
 
@@ -346,12 +350,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public static void initializeLicenseTrialMode(Context context, CallbackContext callbackContext) {
-        NLicenseManager.setTrialMode(LicensingPreferencesFragment.isUseTrial(context));
+        boolean useTrial = LicensingPreferencesFragment.isUseTrial(context);
+        NLicenseManager.setTrialMode(useTrial);
+        Log.i(LOG_TAG, "Initializing trial mode (enabled=" + useTrial + ") with components: " + LicensingManager.components());
         NCore.setContext(context);
         new InitializationTask(context, callbackContext).execute();
     }
 
     public static void initializeClient(Context context) {
+        if (context == null) {
+            Log.w(LOG_TAG, "Não foi possível inicializar o engine: contexto nulo.");
+            return;
+        }
+        engineContext = context.getApplicationContext();
         if (engine == null) {
             engine = new NBiometricClient();
             String path = context.getFilesDir().getAbsolutePath()
@@ -543,6 +554,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         lastEnrollFailureCode = null;
 
         try {
+            recreateEngineIfNeeded();
             if (userData == null) {
                 recordEnrollFailure("User data is null", AuthenticationError.ENROLLMENT_ERROR, null, base64Image);
                 return false;
@@ -555,6 +567,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             Log.d(LOG_TAG, "Starting enrollFromBase64 for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
             Log.d(LOG_TAG, "Image base64 length=" + base64Image.length());
+
+            if (!ensureFaceLicenses()) {
+                recordEnrollFailure("Unable to obtain face biometric licenses", AuthenticationError.ENROLLMENT_ERROR, userData, base64Image);
+                return false;
+            }
 
             byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
             if (decodedBytes == null || decodedBytes.length == 0) {
@@ -570,9 +587,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             NSubject extractSubject = new NSubject();
-            NFace face = engine.detectFaces(image);
-            if (face != null && face.getObjects().size() > 0) {
-                extractSubject.getFaces().add(face);
+            NFace face = new NFace();
+            face.setImage(image);
+            extractSubject.getFaces().add(face);
+            NBiometricStatus status = engine.createTemplate(extractSubject);
+
+            if (status == NBiometricStatus.NONE) {
+                Log.w(LOG_TAG, "Face licenses missing when creating template. Attempting to re-obtain.");
+                if (ensureFaceLicenses()) {
+                    status = engine.createTemplate(extractSubject);
+                }
+            }
+
+            if (status == NBiometricStatus.OK) {
                 AuthenticationError result = enrollTemplate(extractSubject, userData, image);
 
                 if (result == AuthenticationError.OK) {
@@ -582,13 +609,48 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     recordEnrollFailure("Enrollment failed with error: " + result.name(), result, userData, base64Image);
                     return false;
                 }
-            } else {
-                recordEnrollFailure("No faces detected in the provided image", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
-                return false;
             }
+
+            if (status == NBiometricStatus.OBJECT_NOT_FOUND) {
+                recordEnrollFailure("No faces detected in the provided image", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
+            } else {
+                recordEnrollFailure("Failed to create face template (status=" + status.name() + ")", AuthenticationError.EXTRACTION_ERROR, userData, base64Image);
+            }
+            return false;
         } catch (Exception e) {
             recordEnrollFailure("Error enrolling from Base64: " + e.getMessage(), AuthenticationError.ENROLLMENT_ERROR, userData, base64Image);
             Log.e(LOG_TAG, "Error enrolling from Base64: ", e);
+            return false;
+        }
+    }
+
+    private static boolean ensureFaceLicenses() {
+        boolean allObtained = true;
+        for (String component : REQUIRED_FACE_COMPONENTS) {
+            if (!isComponentActivated(component)) {
+                boolean obtained = obtainLicenseComponent(component);
+                allObtained &= obtained;
+            }
+        }
+        return allObtained;
+    }
+
+    private static boolean isComponentActivated(String component) {
+        try {
+            return NLicense.isComponentActivated(component);
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "Failed to check license component: " + component, e);
+            return false;
+        }
+    }
+
+    private static boolean obtainLicenseComponent(String component) {
+        try {
+            boolean obtained = NLicense.obtainComponents(LOCAL_LICENSE_SERVER, LOCAL_LICENSE_TIMEOUT, component);
+            Log.d(LOG_TAG, "Obtaining license component '" + component + "' from " + LOCAL_LICENSE_SERVER + ": " + obtained);
+            return obtained;
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Error obtaining license component: " + component, e);
             return false;
         }
     }
@@ -611,6 +673,53 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
         }
         return identifiedUsers;
+    }
+
+    public static void recreateEngine(Context context) {
+        try {
+            if (context == null) {
+                Log.w(LOG_TAG, "Não foi possível recriar o engine: contexto nulo.");
+                return;
+            }
+            engineContext = context.getApplicationContext();
+            if (engine != null) {
+                engine.cancel();
+                engine.dispose();
+            }
+
+            engine = new NBiometricClient();
+            String path = context.getFilesDir().getAbsolutePath()
+                    + System.getProperty("file.separator") + "BiometricsV50.db";
+            engine.setDatabaseConnectionToSQLite(path);
+            NBiographicDataSchema schema = NBiographicDataSchema.parse("(Thumbnail blob, UserData string)");
+            engine.setCustomDataSchema(schema);
+            engine.setUseDeviceManager(true);
+            engine.setMatchingWithDetails(true);
+            engine.setFacesCreateThumbnailImage(true);
+            engine.setFacesThumbnailImageWidth(90);
+            engine.setProperty("Faces.IcaoUnnaturalSkinToneThreshold", 10);
+            engine.setProperty("Faces.IcaoSkinReflectionThreshold", 10);
+            engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
+            engine.initialize();
+
+            Log.i(LOG_TAG, "Engine recriado após captura ou identificação.");
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Erro ao recriar engine", e);
+        }
+    }
+
+    private static void recreateEngineIfNeeded() {
+        if (!needsEngineRecreation.compareAndSet(true, false)) {
+            return;
+        }
+
+        Context context = engineContext;
+        if (context != null) {
+            recreateEngine(context);
+        } else {
+            Log.w(LOG_TAG, "Engine marcado para recriação, mas o contexto está indisponível.");
+            needsEngineRecreation.set(true);
+        }
     }
 
     private static String[] prepareIdentifiedUsers(List<NeurotechnologyServiceResluts> results) {
@@ -1460,8 +1569,25 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return guids;
     }
 
-    public static Boolean deleteId(String id) {
-        return engine.delete(id) == NBiometricStatus.OK;
+    public static boolean deleteId(String id, Context context) {
+        try {
+            NBiometricStatus status = engine.delete(id);
+            boolean deleted = (status == NBiometricStatus.OK);
+
+            if (deleted) {
+                Log.i(LOG_TAG, "Template deletado com sucesso: " + id);
+                if (context != null) {
+                    engineContext = context.getApplicationContext();
+                }
+                needsEngineRecreation.set(true);
+                Log.i(LOG_TAG, "Engine marcado para recriação após deleção.");
+            }
+
+            return deleted;
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Erro ao deletar ID: " + id, e);
+            return false;
+        }
     }
 
     public void closeCamera() {

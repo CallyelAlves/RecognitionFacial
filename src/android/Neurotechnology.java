@@ -226,6 +226,7 @@ public class Neurotechnology extends CordovaPlugin {
     private void release() {
         try {
             NeurotechnologyService.release();
+            callbackContext.success("release realizado com sucesso");
         } catch (Exception e) {
             callbackContext.error("Error in desativarLicenca: " + e.getMessage());
         }
@@ -243,7 +244,7 @@ public class Neurotechnology extends CordovaPlugin {
     private void deleteId(JSONArray args) {
         try {
             String id = args.getString(0);
-            Boolean result = NeurotechnologyService.deleteId(id);
+            Boolean result = NeurotechnologyService.deleteId(id, this.context);
             Log.d(TAG, String.valueOf(result));
             if (result) {
               callbackContext.success("colaborador excluido com sucesso. Id: " + id);
