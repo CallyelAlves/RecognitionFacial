@@ -1282,6 +1282,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     return;
                 }
 
+                FaceFrame data;
                 synchronized (captureLock) {
                     while (mImageQueue.isEmpty()) {
                         try {
@@ -1290,6 +1291,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             Log.e(LOG_TAG, "Waiting interrupted", e);
                         }
                     }
+                    data = mImageQueue.remove(0);
                 }
 
                 if (!isProcessingFrames) {
@@ -1297,141 +1299,139 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     return;
                 }
 
-                if (!mImageQueue.isEmpty()) {
-                    FaceFrame data = mImageQueue.remove(0);
-                    if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
-                        Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
-                        continue;
+                if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
+                    Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
+                    continue;
+                }
+
+                NSubject subject = new NSubject();
+                NImage image = null;
+
+                try {
+                    boolean useYUV = data.getBuffer2() != null && data.getBuffer3() != null;
+
+                    if (useYUV) {
+                        image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                        image.copyFromYCbCrData(
+                                new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
+                                new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
+                                new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
+                        );
+                    } else {
+                        image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
                     }
 
-                    NSubject subject = new NSubject();
-                    NImage image = null;
+                } catch (IllegalArgumentException ex) {
+                    Log.e(LOG_TAG, "Erro ao criar imagem. Ignorando frame!", ex);
+                    continue;
+                }
 
-                    try {
-                        boolean useYUV = data.getBuffer2() != null && data.getBuffer3() != null;
+                if (image == null) continue;
 
-                        if (useYUV) {
-                            image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
-                            image.copyFromYCbCrData(
-                                    new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                    new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                    new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
-                            );
-                        }
+                NFace nFace = new NFace();
+                nFace.setCaptureOptions(EnumSet.of(NBiometricCaptureOption.STREAM));
+                nFace.setImage(image);
+                subject.getFaces().add(nFace);
 
-                        if (!useYUV) {
-                            image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
-                        }
+                EnumSet<NBiometricOperation> operations =
+                        EnumSet.of(NBiometricOperation.CREATE_TEMPLATE, NBiometricOperation.DETECT_SEGMENTS);
+                NBiometricTask task = engine.createTask(operations, subject);
+                engine.performTask(task);
 
-                    } catch (IllegalArgumentException ex) {
-                        Log.e(LOG_TAG, "Erro ao criar imagem. Ignorando frame!", ex);
-                        continue;
-                    }
+                if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
+                    NFace detectedFace = subject.getFaces().get(0);
+                    Byte liveness = detectedFace.getObjects().isEmpty()
+                            ? 0
+                            : detectedFace.getObjects().get(0).getLivenessScore();
+                    int score = liveness;
+                    Log.d("LivenessScore", String.valueOf(score));
 
-                    if (image != null) {
-                        NFace nFace = new NFace();
-                        nFace.setCaptureOptions(EnumSet.of(NBiometricCaptureOption.STREAM));
-                        nFace.setImage(image);
-                        subject.getFaces().add(nFace);
+                    if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
+                        NLAttributes faceAttributes = detectedFace.getObjects().get(0);
+                        Rect boundingRect = faceAttributes.getBoundingRect();
+                        int faceWidth = boundingRect.width();
+                        int imageWidth = image.getWidth();
 
-                        EnumSet<NBiometricOperation> operations = EnumSet.of(NBiometricOperation.CREATE_TEMPLATE, NBiometricOperation.DETECT_SEGMENTS);
-                        NBiometricTask task = engine.createTask(operations, subject);
-                        engine.performTask(task);
+                        float faceRatio = (float) faceWidth / imageWidth;
+                        Log.d("FaceDetection", "Face width: " + faceWidth +
+                                ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
 
-                        if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
-                            NFace detectedFace = subject.getFaces().get(0);
-                            // Após CREATE_TEMPLATE, os atributos (incluindo liveness) ficam em detectedFace.getObjects()[0]
-                            Byte liveness = detectedFace.getObjects().isEmpty() ? 0 : detectedFace.getObjects().get(0).getLivenessScore();
-                            int score = liveness;
-                            Log.d("LivenessScore", String.valueOf(score));
+                        float centerX = boundingRect.centerX() / (float) imageWidth;
+                        float centerY = boundingRect.centerY() / (float) image.getHeight();
 
-                            if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
-                                NLAttributes faceAttributes = detectedFace.getObjects().get(0);
-                                Rect boundingRect = faceAttributes.getBoundingRect();
-                                int faceWidth = boundingRect.width();
-                                int imageWidth = image.getWidth();
-
-                                float faceRatio = (float) faceWidth / imageWidth;
-                                Log.d("FaceDetection", "Face width: " + faceWidth + ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
-
-                                float centerX = boundingRect.centerX() / (float) imageWidth;
-                                float centerY = boundingRect.centerY() / (float) image.getHeight();
-
-                                if (faceRatio < minimumFaceProportion) {
-                                    activity.runOnUiThread(() -> {
-                                        statusTextView.setText("Aproxime o rosto");
-                                        faceOverlayView.setBorderColor(Color.YELLOW);
-                                    });
-                                    Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
-                                    continue;
-                                }
-
-                                if (lastCenterX[0] >= 0 && lastCenterY[0] >= 0) {
-                                    float deltaX = Math.abs(centerX - lastCenterX[0]);
-                                    float deltaY = Math.abs(centerY - lastCenterY[0]);
-
-                                    if (deltaX > stabilityThreshold || deltaY > stabilityThreshold) {
-                                        faceDetectedStartTime[0] = 0;
-                                        activity.runOnUiThread(() -> {
-                                            statusTextView.setText("Mantenha o rosto estável");
-                                            faceOverlayView.setBorderColor(Color.YELLOW);
-                                        });
-                                    }
-                                }
-                                lastCenterX[0] = centerX;
-                                lastCenterY[0] = centerY;
-
-                                if (faceDetectedStartTime[0] == 0) {
-                                    faceDetectedStartTime[0] = System.currentTimeMillis();
-                                    activity.runOnUiThread(() -> {
-                                        statusTextView.setText("Aguardando estabilidade...");
-                                        faceOverlayView.setBorderColor(Color.YELLOW);
-                                    });
-                                }
-
-                                long duration = System.currentTimeMillis() - faceDetectedStartTime[0];
-                                if (duration >= stabilityTimeMs) {
-                                    activity.runOnUiThread(() -> {
-                                        statusTextView.setText("Capturando imagem...");
-                                        faceOverlayView.setBorderColor(Color.GREEN);
-                                    });
-                                    String base64Image = null;
-                                    base64Image = convertNImageToBase64(image);
-
-                                    if (hasSentCaptureResult.compareAndSet(false, true)) {
-                                        isProcessingFrames = false;
-                                        callback.onSuccess(base64Image);
-                                    } else {
-                                        isProcessingFrames = false;
-                                        Log.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
-                                    }
-                                    return;
-                                }
-                            } else {
-                                Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
-                                activity.runOnUiThread(() -> {
-                                    statusTextView.setText("Rosto não detectado. LivenessScore: " + livenessScore);
-                                    faceOverlayView.setBorderColor(Color.RED);
-                                });
-                                faceDetectedStartTime[0] = 0;
-                            }
-                        } else {
-                            NBiometricStatus st = task.getStatus();
-                            Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
-                            faceDetectedStartTime[0] = 0;
+                        if (faceRatio < minimumFaceProportion) {
                             activity.runOnUiThread(() -> {
-                                String msg;
-                                switch (st) {
-                                    case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
-                                    case OCCLUSION: msg = "Rosto ocluído"; break;
-                                    case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
-                                    default: msg = "Ajuste seu rosto no enquadramento"; break;
-                                }
-                                statusTextView.setText(msg);
-                                faceOverlayView.setBorderColor(Color.RED);
+                                statusTextView.setText("Aproxime o rosto");
+                                faceOverlayView.setBorderColor(Color.YELLOW);
+                            });
+                            Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
+                            continue;
+                        }
+
+                        if (lastCenterX[0] >= 0 && lastCenterY[0] >= 0) {
+                            float deltaX = Math.abs(centerX - lastCenterX[0]);
+                            float deltaY = Math.abs(centerY - lastCenterY[0]);
+
+                            if (deltaX > stabilityThreshold || deltaY > stabilityThreshold) {
+                                faceDetectedStartTime[0] = 0;
+                                activity.runOnUiThread(() -> {
+                                    statusTextView.setText("Mantenha o rosto estável");
+                                    faceOverlayView.setBorderColor(Color.YELLOW);
+                                });
+                            }
+                        }
+                        lastCenterX[0] = centerX;
+                        lastCenterY[0] = centerY;
+
+                        if (faceDetectedStartTime[0] == 0) {
+                            faceDetectedStartTime[0] = System.currentTimeMillis();
+                            activity.runOnUiThread(() -> {
+                                statusTextView.setText("Aguardando estabilidade...");
+                                faceOverlayView.setBorderColor(Color.YELLOW);
                             });
                         }
+
+                        long duration = System.currentTimeMillis() - faceDetectedStartTime[0];
+                        if (duration >= stabilityTimeMs) {
+                            activity.runOnUiThread(() -> {
+                                statusTextView.setText("Capturando imagem...");
+                                faceOverlayView.setBorderColor(Color.GREEN);
+                            });
+
+                            String base64Image = convertNImageToBase64(image);
+
+                            if (hasSentCaptureResult.compareAndSet(false, true)) {
+                                isProcessingFrames = false;
+                                callback.onSuccess(base64Image);
+                            } else {
+                                isProcessingFrames = false;
+                                Log.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
+                            }
+                            return;
+                        }
+                    } else {
+                        Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                        activity.runOnUiThread(() -> {
+                            statusTextView.setText("Rosto não detectado. LivenessScore: " + livenessScore);
+                            faceOverlayView.setBorderColor(Color.RED);
+                        });
+                        faceDetectedStartTime[0] = 0;
                     }
+                } else {
+                    NBiometricStatus st = task.getStatus();
+                    Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
+                    faceDetectedStartTime[0] = 0;
+                    activity.runOnUiThread(() -> {
+                        String msg;
+                        switch (st) {
+                            case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
+                            case OCCLUSION: msg = "Rosto ocluído"; break;
+                            case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
+                            default: msg = "Ajuste seu rosto no enquadramento"; break;
+                        }
+                        statusTextView.setText(msg);
+                        faceOverlayView.setBorderColor(Color.RED);
+                    });
                 }
             }
         }).start();
