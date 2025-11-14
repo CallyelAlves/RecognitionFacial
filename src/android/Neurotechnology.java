@@ -642,6 +642,18 @@ public class Neurotechnology extends CordovaPlugin {
                         public void sendPluginResult(PluginResult result) {
                             deliverStartCameraPluginResult(result);
                         }
+
+                        @Override
+                        public void onEvent(String name) {
+                            if (eventCallbackContext == null) {
+                                Log.w(TAG, "Evento recebido sem callback registrado: " + name);
+                                return;
+                            }
+
+                            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, name);
+                            pluginResult.setKeepCallback(true);
+                            eventCallbackContext.sendPluginResult(pluginResult);
+                        }
                     });
             // neurotechnologyService.configureTransform(activity, width, height);
         }

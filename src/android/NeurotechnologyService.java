@@ -436,6 +436,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public static void cleanDB(){
         engine.clear();
+        needsEngineRecreation.set(true);
     }
 
     public static AuthenticationError enrollTemplate(NSubject subject, JSONObject userData, NImage image) {
@@ -1266,6 +1267,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
 
         long[] faceDetectedStartTime = {0};
+        final boolean[] operationNotActivatedNotified = {false};
         // int stabilityTimeMs = 300;
 
         float[] lastCenterX = {-1f};
@@ -1427,11 +1429,17 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
                             case OCCLUSION: msg = "Rosto ocluído"; break;
                             case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
+                            case OPERATION_NOT_ACTIVATED: msg = "Conecte-se a internet para poder marcar novamente"; break;
                             default: msg = "Ajuste seu rosto no enquadramento"; break;
                         }
                         statusTextView.setText(msg);
                         faceOverlayView.setBorderColor(Color.RED);
                     });
+
+                    if (st == NBiometricStatus.OPERATION_NOT_ACTIVATED && !operationNotActivatedNotified[0]) {
+                        operationNotActivatedNotified[0] = true;
+                        callback.onEvent("operation_not_activated");
+                    }
                 }
             }
         }).start();
