@@ -1272,6 +1272,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
         long[] faceDetectedStartTime = {0};
         final boolean[] operationNotActivatedNotified = {false};
+        final NBiometricStatus[] lastReportedStatus = {null};
         // int stabilityTimeMs = 300;
 
         float[] lastCenterX = {-1f};
@@ -1310,44 +1311,53 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     continue;
                 }
 
-                NSubject subject = new NSubject();
+                NSubject subject = null;
                 NImage image = null;
+                NFace nFace = null;
+                NBiometricTask task = null;
+                NBuffer buffer1 = null;
+                NBuffer buffer2 = null;
+                NBuffer buffer3 = null;
+
+                NBiometricStatus status = null;
 
                 try {
+                    subject = new NSubject();
+
                     boolean useYUV = data.getBuffer2() != null && data.getBuffer3() != null;
 
                     if (useYUV) {
                         image = NImage.create(NPixelFormat.RGB_8U, data.getWidth(), data.getHeight(), data.getStride());
+                        buffer1 = new NBuffer(data.getBuffer1());
+                        buffer2 = new NBuffer(data.getBuffer2());
+                        buffer3 = new NBuffer(data.getBuffer3());
                         image.copyFromYCbCrData(
-                                new NBuffer(data.getBuffer1()), data.getRowStride1(), data.getPixelStride1(),
-                                new NBuffer(data.getBuffer2()), data.getRowStride2(), data.getPixelStride2(),
-                                new NBuffer(data.getBuffer3()), data.getRowStride3(), data.getPixelStride3()
+                                buffer1, data.getRowStride1(), data.getPixelStride1(),
+                                buffer2, data.getRowStride2(), data.getPixelStride2(),
+                                buffer3, data.getRowStride3(), data.getPixelStride3()
                         );
                     } else {
-                        image = NImage.fromMemory(new NBuffer(data.getBuffer1()), NImageFormat.getJPEG());
+                        buffer1 = new NBuffer(data.getBuffer1());
+                        image = NImage.fromMemory(buffer1, NImageFormat.getJPEG());
                     }
 
-                } catch (IllegalArgumentException ex) {
-                    Log.e(LOG_TAG, "Erro ao criar imagem. Ignorando frame!", ex);
-                    continue;
-                }
+                    if (image == null) continue;
 
-                if (image == null) continue;
+                    nFace = new NFace();
+                    nFace.setCaptureOptions(EnumSet.of(NBiometricCaptureOption.STREAM));
+                    nFace.setImage(image);
+                    subject.getFaces().add(nFace);
 
-                NFace nFace = new NFace();
-                nFace.setCaptureOptions(EnumSet.of(NBiometricCaptureOption.STREAM));
-                nFace.setImage(image);
-                subject.getFaces().add(nFace);
+                    EnumSet<NBiometricOperation> operations =
+                            EnumSet.of(NBiometricOperation.CREATE_TEMPLATE, NBiometricOperation.DETECT_SEGMENTS);
+                    task = engine.createTask(operations, subject);
+                    engine.performTask(task);
+                    status = task.getStatus();
 
-                EnumSet<NBiometricOperation> operations =
-                        EnumSet.of(NBiometricOperation.CREATE_TEMPLATE, NBiometricOperation.DETECT_SEGMENTS);
-                NBiometricTask task = engine.createTask(operations, subject);
-                engine.performTask(task);
-
-                if (task.getStatus() == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
-                    NFace detectedFace = subject.getFaces().get(0);
-                    Byte liveness = detectedFace.getObjects().isEmpty()
-                            ? 0
+                    if (status == NBiometricStatus.OK && !subject.getFaces().isEmpty()) {
+                        NFace detectedFace = subject.getFaces().get(0);
+                        Byte liveness = detectedFace.getObjects().isEmpty()
+                                ? 0
                             : detectedFace.getObjects().get(0).getLivenessScore();
                     int score = liveness;
                     Log.d("LivenessScore", String.valueOf(score));
@@ -1404,7 +1414,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 faceOverlayView.setBorderColor(Color.GREEN);
                             });
 
-                            String base64Image = convertNImageToBase64(image);
+                            String base64Image = convertNImageToBase64(image, callback);
+
+                            if (base64Image == null) {
+                                faceDetectedStartTime[0] = 0;
+                                continue;
+                            }
 
                             if (hasSentCaptureResult.compareAndSet(false, true)) {
                                 isProcessingFrames = false;
@@ -1426,26 +1441,62 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         });
                         faceDetectedStartTime[0] = 0;
                     }
-                } else {
-                    NBiometricStatus st = task.getStatus();
-                    Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
-                    faceDetectedStartTime[0] = 0;
-                    activity.runOnUiThread(() -> {
-                        String msg;
-                        switch (st) {
-                            case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
-                            case OCCLUSION: msg = "Rosto ocluído"; break;
-                            case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
-                            case OPERATION_NOT_ACTIVATED: msg = "Conecte-se a internet para poder marcar novamente"; break;
-                            default: msg = "Ajuste seu rosto no enquadramento"; break;
-                        }
-                        statusTextView.setText(msg);
-                        faceOverlayView.setBorderColor(Color.RED);
-                    });
+                    } else {
+                        NBiometricStatus st = status;
+                        Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
+                        faceDetectedStartTime[0] = 0;
+                        activity.runOnUiThread(() -> {
+                            String msg;
+                            switch (st) {
+                                case SPOOF_DETECTED: msg = "Possível spoof detectado"; break;
+                                case OCCLUSION: msg = "Rosto ocluído"; break;
+                                case OBJECT_NOT_FOUND: msg = "Rosto não detectado"; break;
+                                case OPERATION_NOT_ACTIVATED: msg = "Conecte-se a internet para poder marcar novamente"; break;
+                                default: msg = "Ajuste seu rosto no enquadramento"; break;
+                            }
+                            statusTextView.setText(msg);
+                            faceOverlayView.setBorderColor(Color.RED);
+                            if (st != null && st != NBiometricStatus.OK && st != lastReportedStatus[0]) {
+                                lastReportedStatus[0] = st;
+                                reportStatusChange(callback, st, msg);
+                            }
+                        });
 
-                    if (st == NBiometricStatus.OPERATION_NOT_ACTIVATED && !operationNotActivatedNotified[0]) {
-                        operationNotActivatedNotified[0] = true;
-                        callback.onEvent("operation_not_activated");
+                        if (st == NBiometricStatus.OPERATION_NOT_ACTIVATED && !operationNotActivatedNotified[0]) {
+                            operationNotActivatedNotified[0] = true;
+                            callback.onEvent("operation_not_activated");
+                        }
+                    }
+                } catch (IllegalArgumentException ex) {
+                    reportProcessingError(callback, "create_image", ex);
+                    continue;
+                } catch (Exception ex) {
+                    reportProcessingError(callback, "process_frame", ex);
+                    continue;
+                } finally {
+                    if (task != null) {
+                        task.dispose();
+                    }
+                    if (nFace != null) {
+                        nFace.dispose();
+                    }
+                    if (subject != null) {
+                        subject.dispose();
+                    }
+                    if (image != null) {
+                        image.dispose();
+                    }
+                    if (buffer3 != null) {
+                        buffer3.dispose();
+                    }
+                    if (buffer2 != null) {
+                        buffer2.dispose();
+                    }
+                    if (buffer1 != null) {
+                        buffer1.dispose();
+                    }
+                    if (status == NBiometricStatus.OK) {
+                        lastReportedStatus[0] = null;
                     }
                 }
             }
@@ -1625,14 +1676,56 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
     }
 
-    private String convertNImageToBase64(NImage image) {
+    private String convertNImageToBase64(NImage image, Callback callback) {
         try {
-            NBuffer buffer = image.save(NImageFormat.getJPEG());
-            byte[] imageBytes = buffer.toByteArray();
-            return Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+            NBuffer buffer = null;
+            try {
+                buffer = image.save(NImageFormat.getJPEG());
+                byte[] imageBytes = buffer.toByteArray();
+                return Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+            } finally {
+                if (buffer != null) {
+                    buffer.dispose();
+                }
+            }
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Erro ao converter imagem para base64", e);
+            reportProcessingError(callback, "convert_to_base64", e);
             return null;
+        }
+    }
+
+    private void reportProcessingError(Callback callback, String stage, Exception ex) {
+        Log.e(LOG_TAG, "Erro em stage " + stage, ex);
+        if (callback == null) {
+            return;
+        }
+
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("type", "frame_processing_error");
+            payload.put("stage", stage);
+            payload.put("message", ex != null ? ex.getMessage() : "");
+            payload.put("stacktrace", Log.getStackTraceString(ex));
+            callback.onFailure(payload.toString());
+        } catch (Exception jsonException) {
+            Log.e(LOG_TAG, "Erro ao enviar log de processamento", jsonException);
+        }
+    }
+
+    private void reportStatusChange(Callback callback, NBiometricStatus status, String message) {
+        Log.i(LOG_TAG, "Status de frame alterado: " + status + " - " + message);
+        if (callback == null) {
+            return;
+        }
+
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("type", "frame_status_change");
+            payload.put("status", status != null ? status.name() : "");
+            payload.put("message", message != null ? message : "");
+            callback.onEvent(payload.toString());
+        } catch (Exception jsonException) {
+            Log.e(LOG_TAG, "Erro ao enviar status de frame", jsonException);
         }
     }
 
