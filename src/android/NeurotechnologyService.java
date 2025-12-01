@@ -1253,15 +1253,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             float stabilityThreshold,
             float minimumFaceProportion,
             int livenessScore,
+            Boolean isLiveness,
             Callback callback
     ) {
         mImageQueue.clear();
         isProcessingFrames = true;
         hasSentCaptureResult.set(false);
+        boolean livenessEnabled = Boolean.TRUE.equals(isLiveness);
         try {
-            engine.setFacesDetectLiveness(true);
-            engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
-            engine.setFacesLivenessThreshold((byte) livenessScore);
+            engine.setFacesDetectLiveness(livenessEnabled);
+            if (livenessEnabled) {
+                engine.setFacesLivenessMode(NLivenessMode.PASSIVE);
+                engine.setFacesLivenessThreshold((byte) livenessScore);
+            }
         } catch (Exception e) {
             Log.w(LOG_TAG, "Falha ao configurar parâmetros de liveness", e);
         }
@@ -1348,7 +1352,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     int score = liveness;
                     Log.d("LivenessScore", String.valueOf(score));
 
-                    if (!detectedFace.getObjects().isEmpty() && (score > livenessScore)) {
+                    if (!detectedFace.getObjects().isEmpty() && (!livenessEnabled || score > livenessScore)) {
                         NLAttributes faceAttributes = detectedFace.getObjects().get(0);
                         Rect boundingRect = faceAttributes.getBoundingRect();
                         int faceWidth = boundingRect.width();
@@ -1414,7 +1418,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     } else {
                         Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
                         activity.runOnUiThread(() -> {
-                            statusTextView.setText("Rosto não detectado. LivenessScore: " + livenessScore);
+                            String message = livenessEnabled
+                                    ? "Rosto não detectado. LivenessScore: " + livenessScore
+                                    : "Rosto não detectado";
+                            statusTextView.setText(message);
                             faceOverlayView.setBorderColor(Color.RED);
                         });
                         faceDetectedStartTime[0] = 0;
