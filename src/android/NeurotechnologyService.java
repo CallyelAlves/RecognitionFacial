@@ -942,11 +942,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 if (usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
                     selectedCameraId = cameraId;
-                    NeuroLogger.e(LOG_TAG, "Selecionada câmera TRASEIRA, ID: " + selectedCameraId);
+                    NeuroLogger.d(LOG_TAG, "Selecionada câmera TRASEIRA, ID: " + selectedCameraId);
                     break;
                 } else if (!usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
                     selectedCameraId = cameraId;
-                    NeuroLogger.e(LOG_TAG, "Selecionada câmera FRONTAL, ID: " + selectedCameraId);
+                    NeuroLogger.d(LOG_TAG, "Selecionada câmera FRONTAL, ID: " + selectedCameraId);
                     break;
                 }
             }
@@ -954,7 +954,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             // Fallback: se não encontrou, pega da AppSettings
             if (selectedCameraId == null) {
                 selectedCameraId = AppSettings.getCurrentCamera(context);
-                NeuroLogger.e(LOG_TAG, "Não encontrou câmera desejada, usando da AppSettings: " + selectedCameraId);
+                NeuroLogger.d(LOG_TAG, "Não encontrou câmera desejada, usando da AppSettings: " + selectedCameraId);
             }
 
             mCameraId = selectedCameraId;
@@ -967,7 +967,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 mLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
             }
 
-            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs cameraID :" + facing);
+            NeuroLogger.d(LOG_TAG, "setUpCameraOutputs cameraID :" + facing);
             StreamConfigurationMap map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) {
@@ -1050,8 +1050,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         mPreviewSize.getHeight(), mPreviewSize.getWidth());
             }
 
-            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs orientation : " + orientation);
-            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " + mPreviewSize.getWidth());
+            NeuroLogger.d(LOG_TAG, "setUpCameraOutputs orientation : " + orientation);
+            NeuroLogger.d(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " + mPreviewSize.getWidth());
 
             cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
@@ -1425,6 +1425,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                             if (hasSentCaptureResult.compareAndSet(false, true)) {
                                 isProcessingFrames = false;
+                                NeuroLogger.i(LOG_TAG, "Foto capturada com sucesso!");
                                 callback.onSuccess(base64Image);
                             } else {
                                 isProcessingFrames = false;
@@ -1445,7 +1446,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     }
                     } else {
                         NBiometricStatus st = status;
-                        NeuroLogger.e(LOG_TAG, "Reconhecimento não OK: " + st);
+                        // NeuroLogger.e(LOG_TAG, "Reconhecimento não OK: " + st);
                         faceDetectedStartTime[0] = 0;
                         activity.runOnUiThread(() -> {
                             String msg;
