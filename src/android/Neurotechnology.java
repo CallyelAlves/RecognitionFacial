@@ -707,7 +707,17 @@ public class Neurotechnology extends CordovaPlugin {
 
         stopDateTimeUpdates();
 
-        activity.runOnUiThread(() -> {
+        Activity currentActivity = activity != null ? activity : (cordova != null ? cordova.getActivity() : null);
+
+        if (currentActivity == null) {
+            NeuroLogger.e(TAG, "Activity está nula ao tentar fechar a câmera");
+            neurotechnologyService.closeCamera();
+            return;
+        }
+
+        activity = currentActivity;
+
+        currentActivity.runOnUiThread(() -> {
             if (btnBack != null) {
                 btnBack.setVisibility(View.GONE);
             }
@@ -723,7 +733,7 @@ public class Neurotechnology extends CordovaPlugin {
             if (timeTextView != null) {
                 timeTextView.setVisibility(View.GONE);
             }
-            neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
+            neurotechnologyService.closeCameraView(currentActivity, textureView, faceOverlayView);
             dateTextView = null;
             weekTextView = null;
             timeTextView = null;

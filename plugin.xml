@@ -28,6 +28,7 @@
         <source-file src="src/android/utils/FaceOverlayView.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/AppSettings.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/utils/CameraResolution.java" target-dir="src/com/cordova/neurotechnology/utils" />
+        <source-file src="src/android/utils/NeuroLogger.java" target-dir="src/com/cordova/neurotechnology/utils" />
         <source-file src="src/android/helpers/FaceFrame.java" target-dir="src/com/cordova/neurotechnology/helpers" />
         <source-file src="src/android/licensing/LicensingManager.java" target-dir="src/com/cordova/neurotechnology/licensing" />
         <source-file src="src/android/licensing/LicensingState.java" target-dir="src/com/cordova/neurotechnology/licensing" />

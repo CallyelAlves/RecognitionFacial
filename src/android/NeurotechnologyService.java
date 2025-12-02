@@ -1578,6 +1578,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public void closeCameraView(Activity activity, AutoFitTextureView textureView, FaceOverlayView faceOverlayView) {
         closeCamera();
+        if (activity == null) {
+            NeuroLogger.w("NeurotechnologyService", "Activity nula ao tentar fechar a camera view");
+            return;
+        }
         activity.runOnUiThread(() -> {
             try {
                 if (textureView != null) {
@@ -1593,7 +1597,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     rootView.removeView(textureView);
                     rootView.removeView(faceOverlayView);
                 }
-                faceOverlayView.setVisibility(View.GONE);
+                if (faceOverlayView != null) {
+                    faceOverlayView.setVisibility(View.GONE);
+                }
             } catch (Exception e) {
                 NeuroLogger.e("CameraError", "Erro ao fechar câmera", e);
             }
