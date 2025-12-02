@@ -2,7 +2,7 @@ package com.cordova.neurotechnology.licensing;
 
 import android.content.Context;
 import android.os.AsyncTask;
-import android.util.Log;
+import com.cordova.neurotechnology.utils.NeuroLogger;
 
 
 import com.neurotec.licensing.NLicense;
@@ -56,7 +56,7 @@ public final class LicensingManager {
 		try {
 			return NLicense.isComponentActivated(license);
 		} catch (IOException e) {
-			Log.e(TAG, "IOException", e);
+			NeuroLogger.e(TAG, "IOException", e);
 			return false;
 		}
 	}
@@ -116,7 +116,7 @@ public final class LicensingManager {
 				try {
 					return reobtainComponents(context);
 				} catch (Exception e) {
-					Log.e(TAG, "Exception", e);
+					NeuroLogger.e(TAG, "Exception", e);
 					return false;
 				}
 			}
@@ -151,7 +151,7 @@ public final class LicensingManager {
 				try {
 					return obtainComponents(components, address, port);
 				} catch (Exception e) {
-					Log.e(TAG, "Exception", e);
+					NeuroLogger.e(TAG, "Exception", e);
 					return false;
 				}
 			}
@@ -176,7 +176,7 @@ public final class LicensingManager {
 		if (components == null) throw new NullPointerException("components");
 		if (components.isEmpty()) throw new IllegalArgumentException("List of components is empty");
 
-		Log.i(TAG, String.format("Obtaining licenses from server %s:%s", address, port));
+		NeuroLogger.i(TAG, String.format("Obtaining licenses from server %s:%s", address, port));
 
 		boolean result = true;
 		mComponents.addAll(components);
@@ -185,7 +185,7 @@ public final class LicensingManager {
 
 			available = NLicense.obtainComponents(address, port, component);
 			result &= available;
-			Log.i(TAG, String.format("Obtaining '%s' license %s.", component, available ? "succeeded" : "failed"));
+			NeuroLogger.i(TAG, String.format("Obtaining '%s' license %s.", component, available ? "succeeded" : "failed"));
 		}
 		return result;
 	}

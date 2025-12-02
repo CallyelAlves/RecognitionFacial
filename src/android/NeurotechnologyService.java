@@ -23,7 +23,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Base64;
-import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.TextureView;
@@ -111,6 +110,7 @@ import com.cordova.neurotechnology.utils.CameraResolution;
 import com.cordova.neurotechnology.helpers.FaceFrame;
 import com.cordova.neurotechnology.licensing.LicensingManager;
 import com.cordova.neurotechnology.licensing.LicensingState;
+import com.cordova.neurotechnology.utils.NeuroLogger;
 
 import com.neurotec.biometrics.NBiometricCaptureOption;
 
@@ -185,7 +185,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
             NCore.setContext(context);
-            Log.d(LOG_TAG, "ARGS JSON: " + args.toString());
+            NeuroLogger.d(LOG_TAG, "ARGS JSON: " + args.toString());
 
             JSONArray pathArray = args.getJSONArray(0);
 
@@ -205,7 +205,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 File file = new File(path);
 
                 if (!file.exists()) {
-                    Log.e(LOG_TAG, "Arquivo não encontrado: " + path);
+                    NeuroLogger.e(LOG_TAG, "Arquivo não encontrado: " + path);
                     continue;
                 }
 
@@ -220,31 +220,31 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         String serialContent = new String(Files.readAllBytes(file.toPath())).trim();
 
                         String id = NLicense.generateID(null, serialContent);
-                        Log.d(LOG_TAG, "Activation ID gerado: " + id);
+                        NeuroLogger.d(LOG_TAG, "Activation ID gerado: " + id);
 
                         // Quando ativado retorna um token da ativação que é usado posteriomente para desativação, esse token é armazenado em um arquivo .lic
                         String licenseString = NLicense.activateOnline(id);
-                        Log.d(LOG_TAG, "Licença ativada online: " + licenseString);
+                        NeuroLogger.d(LOG_TAG, "Licença ativada online: " + licenseString);
 
                         licenseStringToken.add(licenseString);
                         Files.write(Paths.get(licFilePath), licenseString.getBytes("UTF-8"));
-                        Log.d(LOG_TAG, "Licença salva em: " + licFilePath);
+                        NeuroLogger.d(LOG_TAG, "Licença salva em: " + licFilePath);
                     }
 
                     // Aqui adiciona a licença no aparelho
                     byte[] licBytes = Files.readAllBytes(Paths.get(licFilePath));
                     NBuffer buffer = new NBuffer(licBytes);
                     NLicense.add(buffer);
-                    Log.d(LOG_TAG, "Licença adicionada com sucesso: " + licFilePath);
+                    NeuroLogger.d(LOG_TAG, "Licença adicionada com sucesso: " + licFilePath);
 
                 } else if (path.toLowerCase().endsWith(".lic")) {
                     byte[] licBytes = Files.readAllBytes(file.toPath());
                     NBuffer buffer = new NBuffer(licBytes);
                     NLicense.add(buffer);
-                    Log.d(LOG_TAG, "Licença adicionada com sucesso: " + path);
+                    NeuroLogger.d(LOG_TAG, "Licença adicionada com sucesso: " + path);
 
                 } else {
-                    Log.w(LOG_TAG, "Tipo de arquivo não reconhecido (esperado .sn ou .lic): " + path);
+                    NeuroLogger.w(LOG_TAG, "Tipo de arquivo não reconhecido (esperado .sn ou .lic): " + path);
                 }
             }
 
@@ -257,10 +257,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         try {
                             // Carrega os componente da ativação
                             boolean ok = NLicense.obtainComponents("/local", 5000, component);
-                            Log.d(LOG_TAG, component + ": " + (ok ? "ativado" : "falhou"));
+                            NeuroLogger.d(LOG_TAG, component + ": " + (ok ? "ativado" : "falhou"));
                             result &= ok;
                         } catch (Exception e) {
-                            Log.e(LOG_TAG, "Erro ao obter licença para " + component + ": " + e.getMessage());
+                            NeuroLogger.e(LOG_TAG, "Erro ao obter licença para " + component + ": " + e.getMessage());
                             result = false;
                         }
                     }
@@ -278,7 +278,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }).execute();
 
         } catch (Exception ex) {
-            Log.e(LOG_TAG, "Erro ao carregar licenças: " + ex.getMessage(), ex);
+            NeuroLogger.e(LOG_TAG, "Erro ao carregar licenças: " + ex.getMessage(), ex);
             callbackContext.error("Erro ao carregar licença: " + ex.getMessage());
         }
     }
@@ -298,7 +298,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 String snPath = pathArray.getString(i).replaceFirst("file://", "");
                 File snFile = new File(snPath);
                 if (!snFile.exists()) {
-                    Log.e(LOG_TAG, "Arquivo .sn não encontrado: " + snPath);
+                    NeuroLogger.e(LOG_TAG, "Arquivo .sn não encontrado: " + snPath);
                     allDeactivated = false;
                     continue;
                 }
@@ -309,7 +309,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 File licFile = new File(licFilePath);
                 if (!licFile.exists()) {
-                    Log.e(LOG_TAG, "Licença offline não encontrada para serial: " + serialContent);
+                    NeuroLogger.e(LOG_TAG, "Licença offline não encontrada para serial: " + serialContent);
                     allDeactivated = false;
                     continue;
                 }
@@ -319,16 +319,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 // Gera o Deactivation ID
                 String deactivationID = generateDeactivationID(licenseString);
-                Log.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
+                NeuroLogger.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
                 deactivationIDToken.add(deactivationID);
 
                 // Chama desativação online
                 NLicense.deactivateOnlineWithID(licenseString, deactivationID);
-                Log.d(LOG_TAG, "Licença desativada online para serial: " + serialContent);
+                NeuroLogger.d(LOG_TAG, "Licença desativada online para serial: " + serialContent);
 
                 // Remove o arquivo local
                 boolean deleted = licFile.delete();
-                Log.d(LOG_TAG, "Arquivo .lic deletado: " + deleted);
+                NeuroLogger.d(LOG_TAG, "Arquivo .lic deletado: " + deleted);
             }
 
             if (allDeactivated) {
@@ -338,31 +338,33 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Erro ao desativar licenças: " + e.getMessage(), e);
+            NeuroLogger.e(LOG_TAG, "Erro ao desativar licenças: " + e.getMessage(), e);
             callbackContext.error("Erro ao desativar licenças: " + e.getMessage());
         }
     }
 
     public static String generateDeactivationID(String licenseString) throws IOException {
         String deactivationID = NLicense.generateDeactivationIDForLicense(licenseString);
-        Log.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
+        NeuroLogger.d(LOG_TAG, "Deactivation ID gerado: " + deactivationID);
         return deactivationID;
     }
 
     public static void initializeLicenseTrialMode(Context context, CallbackContext callbackContext) {
         boolean useTrial = LicensingPreferencesFragment.isUseTrial(context);
         NLicenseManager.setTrialMode(useTrial);
-        Log.i(LOG_TAG, "Initializing trial mode (enabled=" + useTrial + ") with components: " + LicensingManager.components());
+        NeuroLogger.i(LOG_TAG, "Initializing trial mode (enabled=" + useTrial + ") with components: " + LicensingManager.components());
         NCore.setContext(context);
         new InitializationTask(context, callbackContext).execute();
     }
 
     public static void initializeClient(Context context) {
         if (context == null) {
-            Log.w(LOG_TAG, "Não foi possível inicializar o engine: contexto nulo.");
+            NeuroLogger.w(LOG_TAG, "Não foi possível inicializar o engine: contexto nulo.");
             return;
         }
-        engineContext = context.getApplicationContext();
+        Context appContext = context.getApplicationContext();
+        NeuroLogger.initialize(appContext);
+        engineContext = appContext;
         if (engine == null) {
             engine = new NBiometricClient();
             String path = context.getFilesDir().getAbsolutePath()
@@ -397,14 +399,14 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
         @Override
         protected Boolean doInBackground(Object... params) {
-            Log.e(LOG_TAG, "InitializationTask : doInBackground");
+            NeuroLogger.e(LOG_TAG, "InitializationTask : doInBackground");
             publishProgress(OBTAINING_LICENSE);
             try {
                 isLicenseObtained = LicensingManager.getInstance().obtainComponents(activityContext);
             } catch (Exception e) {
-                Log.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage(), e);
+                NeuroLogger.e(LOG_TAG, "InitializationTask : doInBackground Error: " + e.getMessage(), e);
             }
-            Log.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
+            NeuroLogger.d(LOG_TAG, isLicenseObtained ? "Licenses obtained" : "Cannot obtain licenses!");
             return true;
         }
 
@@ -422,13 +424,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             super.onProgressUpdate(values);
             switch (values[0]) {
                 case PREPARE_DATA_FILES:
-                    Log.i(LOG_TAG, "Preparing data files...");
+                    NeuroLogger.i(LOG_TAG, "Preparing data files...");
                     break;
                 case OBTAINING_LICENSE:
-                    Log.i(LOG_TAG, "Obtaining licenses...");
+                    NeuroLogger.i(LOG_TAG, "Obtaining licenses...");
                     break;
                 case INITIALIZING_BIOMETRIC_CLIENT:
-                    Log.i(LOG_TAG, "Initializing biometric client");
+                    NeuroLogger.i(LOG_TAG, "Initializing biometric client");
                     break;
             }
         }
@@ -458,7 +460,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     ? AuthenticationError.OK
                     : AuthenticationError.ENROLLMENT_ERROR;
         } catch (Exception ex) {
-            Log.e(LOG_TAG, "Failed to enroll", ex);
+            NeuroLogger.e(LOG_TAG, "Failed to enroll", ex);
             return AuthenticationError.EXTRACTION_ERROR;
         }
     }
@@ -509,9 +511,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 }
             } else {
                 NeurotechnologyServiceResluts res = new NeurotechnologyServiceResluts();
-                Log.e(LOG_TAG, "Identification failed: " + taskIdentify.getStatus());
+                NeuroLogger.e(LOG_TAG, "Identification failed: " + taskIdentify.getStatus());
                 if (taskIdentify.getStatus() == NBiometricStatus.MATCH_NOT_FOUND) {
-                    Log.e(LOG_TAG, "Matcher status:" + taskIdentify.getStatus());
+                    NeuroLogger.e(LOG_TAG, "Matcher status:" + taskIdentify.getStatus());
                     res.setAuthenticationError(AuthenticationError.NO_MATCHING);
                     resultsList.add(res);
                 } else {
@@ -519,7 +521,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 }
             }
         } catch (Exception ex) {
-            Log.e(LOG_TAG, "Exception on matching", ex);
+            NeuroLogger.e(LOG_TAG, "Exception on matching", ex);
             resultsList.clear();
             NeurotechnologyServiceResluts res = new NeurotechnologyServiceResluts();
             res.setAuthenticationError(AuthenticationError.IDENTIFICATION_ERROR);
@@ -533,12 +535,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         lastEnrollFailureCode = errorCode;
 
         String userDataString = userData != null ? userData.toString() : "{}";
-        Log.e(LOG_TAG, "Enrollment failure: " + message + ", errorCode=" + (errorCode != null ? errorCode.name() : "UNKNOWN"));
-        Log.e(LOG_TAG, "Enrollment failure userData: " + userDataString);
+        NeuroLogger.e(LOG_TAG, "Enrollment failure: " + message + ", errorCode=" + (errorCode != null ? errorCode.name() : "UNKNOWN"));
+        NeuroLogger.e(LOG_TAG, "Enrollment failure userData: " + userDataString);
         if (base64Image != null) {
             int previewLength = Math.min(120, base64Image.length());
             String preview = base64Image.substring(0, previewLength);
-            Log.d(LOG_TAG, "Enrollment failure photo base64 length=" + base64Image.length() + ", preview=" + preview);
+            NeuroLogger.d(LOG_TAG, "Enrollment failure photo base64 length=" + base64Image.length() + ", preview=" + preview);
         }
     }
 
@@ -566,8 +568,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 return false;
             }
 
-            Log.d(LOG_TAG, "Starting enrollFromBase64 for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
-            Log.d(LOG_TAG, "Image base64 length=" + base64Image.length());
+            NeuroLogger.d(LOG_TAG, "Starting enrollFromBase64 for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
+            NeuroLogger.d(LOG_TAG, "Image base64 length=" + base64Image.length());
 
             if (!ensureFaceLicenses()) {
                 recordEnrollFailure("Unable to obtain face biometric licenses", AuthenticationError.ENROLLMENT_ERROR, userData, base64Image);
@@ -594,7 +596,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             NBiometricStatus status = engine.createTemplate(extractSubject);
 
             if (status == NBiometricStatus.NONE) {
-                Log.w(LOG_TAG, "Face licenses missing when creating template. Attempting to re-obtain.");
+                NeuroLogger.w(LOG_TAG, "Face licenses missing when creating template. Attempting to re-obtain.");
                 if (ensureFaceLicenses()) {
                     status = engine.createTemplate(extractSubject);
                 }
@@ -604,7 +606,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 AuthenticationError result = enrollTemplate(extractSubject, userData, image);
 
                 if (result == AuthenticationError.OK) {
-                    Log.i(LOG_TAG, "Enrollment successful for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
+                    NeuroLogger.i(LOG_TAG, "Enrollment successful for trabalhador=" + userData.optString("trabalhador", "") + ", codigo=" + userData.optString("codigo", ""));
                     return true;
                 } else {
                     recordEnrollFailure("Enrollment failed with error: " + result.name(), result, userData, base64Image);
@@ -620,7 +622,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             return false;
         } catch (Exception e) {
             recordEnrollFailure("Error enrolling from Base64: " + e.getMessage(), AuthenticationError.ENROLLMENT_ERROR, userData, base64Image);
-            Log.e(LOG_TAG, "Error enrolling from Base64: ", e);
+            NeuroLogger.e(LOG_TAG, "Error enrolling from Base64: ", e);
             return false;
         }
     }
@@ -640,7 +642,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         try {
             return NLicense.isComponentActivated(component);
         } catch (IOException e) {
-            Log.e(LOG_TAG, "Failed to check license component: " + component, e);
+            NeuroLogger.e(LOG_TAG, "Failed to check license component: " + component, e);
             return false;
         }
     }
@@ -648,10 +650,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static boolean obtainLicenseComponent(String component) {
         try {
             boolean obtained = NLicense.obtainComponents(LOCAL_LICENSE_SERVER, LOCAL_LICENSE_TIMEOUT, component);
-            Log.d(LOG_TAG, "Obtaining license component '" + component + "' from " + LOCAL_LICENSE_SERVER + ": " + obtained);
+            NeuroLogger.d(LOG_TAG, "Obtaining license component '" + component + "' from " + LOCAL_LICENSE_SERVER + ": " + obtained);
             return obtained;
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Error obtaining license component: " + component, e);
+            NeuroLogger.e(LOG_TAG, "Error obtaining license component: " + component, e);
             return false;
         }
     }
@@ -679,7 +681,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     public static void recreateEngine(Context context) {
         try {
             if (context == null) {
-                Log.w(LOG_TAG, "Não foi possível recriar o engine: contexto nulo.");
+                NeuroLogger.w(LOG_TAG, "Não foi possível recriar o engine: contexto nulo.");
                 return;
             }
             engineContext = context.getApplicationContext();
@@ -703,9 +705,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
             engine.initialize();
 
-            Log.i(LOG_TAG, "Engine recriado após captura ou identificação.");
+            NeuroLogger.i(LOG_TAG, "Engine recriado após captura ou identificação.");
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Erro ao recriar engine", e);
+            NeuroLogger.e(LOG_TAG, "Erro ao recriar engine", e);
         }
     }
 
@@ -718,7 +720,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         if (context != null) {
             recreateEngine(context);
         } else {
-            Log.w(LOG_TAG, "Engine marcado para recriação, mas o contexto está indisponível.");
+            NeuroLogger.w(LOG_TAG, "Engine marcado para recriação, mas o contexto está indisponível.");
             needsEngineRecreation.set(true);
         }
     }
@@ -737,13 +739,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     public void onLicensingStateChanged(LicensingState state) {
         switch (state) {
             case OBTAINING:
-                Log.i(LOG_TAG, "Obtaining licenses");
+                NeuroLogger.i(LOG_TAG, "Obtaining licenses");
                 break;
             case OBTAINED:
-                Log.i(LOG_TAG, "Licenses were obtained");
+                NeuroLogger.i(LOG_TAG, "Licenses were obtained");
                 break;
             case NOT_OBTAINED:
-                Log.i(LOG_TAG, "Licenses were not obtained");
+                NeuroLogger.i(LOG_TAG, "Licenses were not obtained");
                 break;
         }
     }
@@ -818,7 +820,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 }
                             }
                         } else {
-                            Log.e(LOG_TAG, "Empty image");
+                            NeuroLogger.e(LOG_TAG, "Empty image");
                         }
                     }
                 }
@@ -940,11 +942,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 if (usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
                     selectedCameraId = cameraId;
-                    Log.e(LOG_TAG, "Selecionada câmera TRASEIRA, ID: " + selectedCameraId);
+                    NeuroLogger.e(LOG_TAG, "Selecionada câmera TRASEIRA, ID: " + selectedCameraId);
                     break;
                 } else if (!usarTraseira && facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
                     selectedCameraId = cameraId;
-                    Log.e(LOG_TAG, "Selecionada câmera FRONTAL, ID: " + selectedCameraId);
+                    NeuroLogger.e(LOG_TAG, "Selecionada câmera FRONTAL, ID: " + selectedCameraId);
                     break;
                 }
             }
@@ -952,7 +954,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             // Fallback: se não encontrou, pega da AppSettings
             if (selectedCameraId == null) {
                 selectedCameraId = AppSettings.getCurrentCamera(context);
-                Log.e(LOG_TAG, "Não encontrou câmera desejada, usando da AppSettings: " + selectedCameraId);
+                NeuroLogger.e(LOG_TAG, "Não encontrou câmera desejada, usando da AppSettings: " + selectedCameraId);
             }
 
             mCameraId = selectedCameraId;
@@ -965,7 +967,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 mLensFacing = CameraCharacteristics.LENS_FACING_FRONT;
             }
 
-            Log.e(LOG_TAG, "setUpCameraOutputs cameraID :" + facing);
+            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs cameraID :" + facing);
             StreamConfigurationMap map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) {
@@ -1048,8 +1050,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         mPreviewSize.getHeight(), mPreviewSize.getWidth());
             }
 
-            Log.e(LOG_TAG, "setUpCameraOutputs orientation : " + orientation);
-            Log.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " + mPreviewSize.getWidth());
+            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs orientation : " + orientation);
+            NeuroLogger.e(LOG_TAG, "setUpCameraOutputs TextureView height: " + mPreviewSize.getHeight() + " width: " + mPreviewSize.getWidth());
 
             cameraAngle = getEffectiveImageRotation(facing, mSensorOrientation, displayRotation);
             engine.setFacesTemplateSize(NTemplateSize.MEDIUM);
@@ -1068,7 +1070,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             engine.setFacesQualityThreshold(Byte.parseByte(faceQualityThreshold));
 
         } catch (CameraAccessException e) {
-            Log.e( LOG_TAG,  e.getMessage());
+            NeuroLogger.e( LOG_TAG,  e.getMessage());
         } catch (NullPointerException e) {
         }
     }
@@ -1228,7 +1230,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
             return stream.toByteArray();
         } catch (IOException e) {
-            Log.e("Camera", "Erro ao converter bitmap para JPEG", e);
+            NeuroLogger.e("Camera", "Erro ao converter bitmap para JPEG", e);
             return null;
         }
     }
@@ -1267,7 +1269,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 engine.setFacesLivenessThreshold((byte) livenessScore);
             }
         } catch (Exception e) {
-            Log.w(LOG_TAG, "Falha ao configurar parâmetros de liveness", e);
+            NeuroLogger.w(LOG_TAG, "Falha ao configurar parâmetros de liveness", e);
         }
 
         long[] faceDetectedStartTime = {0};
@@ -1284,7 +1286,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         new Thread(() -> {
             while (isProcessingFrames) {
                 if (engine == null) {
-                    Log.e(LOG_TAG, "Erro: engine não foi inicializado!");
+                    NeuroLogger.e(LOG_TAG, "Erro: engine não foi inicializado!");
                     callback.onFailure("Erro: engine não inicializado!");
                     return;
                 }
@@ -1295,19 +1297,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         try {
                             captureLock.wait();
                         } catch (InterruptedException e) {
-                            Log.e(LOG_TAG, "Waiting interrupted", e);
+                            NeuroLogger.e(LOG_TAG, "Waiting interrupted", e);
                         }
                     }
                     data = mImageQueue.remove(0);
                 }
 
                 if (!isProcessingFrames) {
-                    Log.d("Camera", "Processamento de frames interrompido.");
+                    NeuroLogger.d("Camera", "Processamento de frames interrompido.");
                     return;
                 }
 
                 if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {
-                    Log.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
+                    NeuroLogger.e(LOG_TAG, "Erro: Buffer de imagem inválido.");
                     continue;
                 }
 
@@ -1360,7 +1362,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 ? 0
                             : detectedFace.getObjects().get(0).getLivenessScore();
                     int score = liveness;
-                    Log.d("LivenessScore", String.valueOf(score));
+                    NeuroLogger.d("LivenessScore", String.valueOf(score));
 
                     if (!detectedFace.getObjects().isEmpty() && (!livenessEnabled || score > livenessScore)) {
                         NLAttributes faceAttributes = detectedFace.getObjects().get(0);
@@ -1369,7 +1371,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         int imageWidth = image.getWidth();
 
                         float faceRatio = (float) faceWidth / imageWidth;
-                        Log.d("FaceDetection", "Face width: " + faceWidth +
+                        NeuroLogger.d("FaceDetection", "Face width: " + faceWidth +
                                 ", Image width: " + imageWidth + ", Ratio: " + faceRatio);
 
                         float centerX = boundingRect.centerX() / (float) imageWidth;
@@ -1380,7 +1382,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 statusTextView.setText("Aproxime o rosto");
                                 faceOverlayView.setBorderColor(Color.YELLOW);
                             });
-                            Log.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
+                            NeuroLogger.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
                             continue;
                         }
 
@@ -1426,12 +1428,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 callback.onSuccess(base64Image);
                             } else {
                                 isProcessingFrames = false;
-                                Log.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
+                                NeuroLogger.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
                             }
                             return;
                         }
                     } else {
-                        Log.e(LOG_TAG, "Nenhum objeto facial detectado.");
+                        NeuroLogger.e(LOG_TAG, "Nenhum objeto facial detectado.");
                         activity.runOnUiThread(() -> {
                             String message = livenessEnabled
                                     ? "Rosto não detectado. LivenessScore: " + livenessScore
@@ -1443,7 +1445,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     }
                     } else {
                         NBiometricStatus st = status;
-                        Log.e(LOG_TAG, "Reconhecimento não OK: " + st);
+                        NeuroLogger.e(LOG_TAG, "Reconhecimento não OK: " + st);
                         faceDetectedStartTime[0] = 0;
                         activity.runOnUiThread(() -> {
                             String msg;
@@ -1505,7 +1507,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     private static Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
         if (bitmap == null || bitmap.isRecycled()) {
-            Log.e(LOG_TAG, "Bitmap nulo ou já reciclado. Não é possível rotacionar.");
+            NeuroLogger.e(LOG_TAG, "Bitmap nulo ou já reciclado. Não é possível rotacionar.");
             return null;
         }
 
@@ -1524,7 +1526,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             );
             return rotatedBitmap;
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Erro ao rotacionar bitmap", e);
+            NeuroLogger.e(LOG_TAG, "Erro ao rotacionar bitmap", e);
             return bitmap;
         }
     }
@@ -1553,7 +1555,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             return (sensorOrientation - degrees + 360) % 360;
         } catch (CameraAccessException e) {
-            Log.e(LOG_TAG, "Erro ao obter rotação", e);
+            NeuroLogger.e(LOG_TAG, "Erro ao obter rotação", e);
             return 0;
         }
     }
@@ -1569,7 +1571,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 mBackgroundCameraThread.join();
                 mBackgroundCameraThread = null;
             } catch (InterruptedException e) {
-                Log.e("NeurotechnologyService", "Erro ao parar a thread de fundo", e);
+                NeuroLogger.e("NeurotechnologyService", "Erro ao parar a thread de fundo", e);
             }
         }
     }
@@ -1593,7 +1595,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 }
                 faceOverlayView.setVisibility(View.GONE);
             } catch (Exception e) {
-                Log.e("CameraError", "Erro ao fechar câmera", e);
+                NeuroLogger.e("CameraError", "Erro ao fechar câmera", e);
             }
         });
     }
@@ -1629,7 +1631,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     guids.put(dado);
                 }
             } catch (Exception e) {
-                Log.e(LOG_TAG, "Erro ao ler UserData do ID: " + id, e);
+                NeuroLogger.e(LOG_TAG, "Erro ao ler UserData do ID: " + id, e);
             }
         }
         return guids;
@@ -1641,38 +1643,38 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             boolean deleted = (status == NBiometricStatus.OK);
 
             if (deleted) {
-                Log.i(LOG_TAG, "Template deletado com sucesso: " + id);
+                NeuroLogger.i(LOG_TAG, "Template deletado com sucesso: " + id);
                 if (context != null) {
                     engineContext = context.getApplicationContext();
                 }
                 needsEngineRecreation.set(true);
-                Log.i(LOG_TAG, "Engine marcado para recriação após deleção.");
+                NeuroLogger.i(LOG_TAG, "Engine marcado para recriação após deleção.");
             }
 
             return deleted;
         } catch (Exception e) {
-            Log.e(LOG_TAG, "Erro ao deletar ID: " + id, e);
+            NeuroLogger.e(LOG_TAG, "Erro ao deletar ID: " + id, e);
             return false;
         }
     }
 
     public void closeCamera() {
-        Log.d("Camera", "Fechando câmera...");
+        NeuroLogger.d("Camera", "Fechando câmera...");
 
         if (mCaptureSession != null) {
             mCaptureSession.close();
             mCaptureSession = null;
-            Log.d("Camera", "Capture session fechada");
+            NeuroLogger.d("Camera", "Capture session fechada");
         }
 
         try {
             if (mCameraDevice != null) {
                 mCameraDevice.close();
                 mCameraDevice = null;
-                Log.d("Camera", "Camera device fechada");
+                NeuroLogger.d("Camera", "Camera device fechada");
             }
         } catch (Exception e) {
-            Log.e("Camera", "Erro ao fechar o camera device", e);
+            NeuroLogger.e("Camera", "Erro ao fechar o camera device", e);
         }
     }
 
@@ -1695,7 +1697,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     private void reportProcessingError(Callback callback, String stage, Exception ex) {
-        Log.e(LOG_TAG, "Erro em stage " + stage, ex);
+        NeuroLogger.e(LOG_TAG, "Erro em stage " + stage, ex);
         if (callback == null) {
             return;
         }
@@ -1705,15 +1707,15 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             payload.put("type", "frame_processing_error");
             payload.put("stage", stage);
             payload.put("message", ex != null ? ex.getMessage() : "");
-            payload.put("stacktrace", Log.getStackTraceString(ex));
+            payload.put("stacktrace", android.util.Log.getStackTraceString(ex));
             callback.onFailure(payload.toString());
         } catch (Exception jsonException) {
-            Log.e(LOG_TAG, "Erro ao enviar log de processamento", jsonException);
+            NeuroLogger.e(LOG_TAG, "Erro ao enviar log de processamento", jsonException);
         }
     }
 
     private void reportStatusChange(Callback callback, NBiometricStatus status, String message) {
-        Log.i(LOG_TAG, "Status de frame alterado: " + status + " - " + message);
+        NeuroLogger.i(LOG_TAG, "Status de frame alterado: " + status + " - " + message);
         if (callback == null) {
             return;
         }
@@ -1725,7 +1727,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             payload.put("message", message != null ? message : "");
             callback.onEvent(payload.toString());
         } catch (Exception jsonException) {
-            Log.e(LOG_TAG, "Erro ao enviar status de frame", jsonException);
+            NeuroLogger.e(LOG_TAG, "Erro ao enviar status de frame", jsonException);
         }
     }
 

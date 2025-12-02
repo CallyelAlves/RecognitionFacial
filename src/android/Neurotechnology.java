@@ -4,16 +4,20 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.hardware.SensorManager;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
-import android.util.Log;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.OrientationEventListener;
+import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,15 +26,12 @@ import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.content.Context;
-import android.graphics.Matrix;
-import android.util.DisplayMetrics;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.cordova.neurotechnology.NeurotechnologyService;
-import com.cordova.neurotechnology.utils.Callback;
 import com.cordova.neurotechnology.utils.AutoFitTextureView;
+import com.cordova.neurotechnology.utils.Callback;
 import com.cordova.neurotechnology.utils.FaceOverlayView;
+import com.cordova.neurotechnology.utils.NeuroLogger;
 import com.neurotec.biometrics.NBiometricOperation;
 import com.neurotec.biometrics.NBiometricTask;
 import com.neurotec.licensing.NLicense;
@@ -44,18 +45,16 @@ import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
-import org.json.JSONObject;
 import org.json.JSONException;
+import org.json.JSONObject;
 
-import android.view.OrientationEventListener;
-import android.hardware.SensorManager;
-import android.view.Surface;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import br.com.nasajon.pontocompartilhado.R;
 
@@ -162,7 +161,7 @@ public class Neurotechnology extends CordovaPlugin {
                     return false;
             }
         } catch (Exception e) {
-            Log.e(TAG, "Erro ao executar ação: " + action, e);
+            NeuroLogger.e(TAG, "Erro ao executar ação: " + action, e);
             callbackContext.error("Erro ao executar ação: " + e.getMessage());
             return false;
         }
@@ -246,7 +245,7 @@ public class Neurotechnology extends CordovaPlugin {
         try {
             String id = args.getString(0);
             Boolean result = NeurotechnologyService.deleteId(id, this.context);
-            Log.d(TAG, String.valueOf(result));
+            NeuroLogger.d(TAG, String.valueOf(result));
             if (result) {
               callbackContext.success("colaborador excluido com sucesso. Id: " + id);
             } else {
@@ -274,13 +273,13 @@ public class Neurotechnology extends CordovaPlugin {
             userData = args.getJSONObject(0);
             base64Image = args.getString(1);
 
-            Log.d(TAG, "enrollFromBase64 chamado para trabalhador=" + userData.optString("trabalhador", "")
+            NeuroLogger.d(TAG, "enrollFromBase64 chamado para trabalhador=" + userData.optString("trabalhador", "")
                     + ", codigo=" + userData.optString("codigo", "")
                     + ", fotoBase64Length=" + (base64Image != null ? base64Image.length() : 0));
 
             boolean success = NeurotechnologyService.enrollFromBase64(userData, base64Image);
             if (success) {
-                Log.i(TAG, "Enrollment concluído com sucesso para trabalhador=" + userData.optString("trabalhador", "")
+                NeuroLogger.i(TAG, "Enrollment concluído com sucesso para trabalhador=" + userData.optString("trabalhador", "")
                         + ", codigo=" + userData.optString("codigo", ""));
                 callbackContext.success("Enrollment successful");
             } else {
@@ -295,7 +294,7 @@ public class Neurotechnology extends CordovaPlugin {
                 errorPayload.put("userData", userData);
                 errorPayload.put("photoBase64", base64Image);
 
-                Log.e(TAG, "Enrollment falhou para trabalhador=" + userData.optString("trabalhador", "")
+                NeuroLogger.e(TAG, "Enrollment falhou para trabalhador=" + userData.optString("trabalhador", "")
                         + ", codigo=" + userData.optString("codigo", "")
                         + ", motivo=" + errorPayload.optString("message")
                         + ", codigoErro=" + (failureCode != null ? failureCode : "NA"));
@@ -304,7 +303,7 @@ public class Neurotechnology extends CordovaPlugin {
             }
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Erro na execução de enrollFromBase64", e);
+            NeuroLogger.e(TAG, "Erro na execução de enrollFromBase64", e);
             JSONObject errorPayload = new JSONObject();
             try {
                 errorPayload.put("message", "Error in enrollFromBase64: " + e.getMessage());
@@ -315,7 +314,7 @@ public class Neurotechnology extends CordovaPlugin {
                     errorPayload.put("photoBase64", base64Image);
                 }
             } catch (JSONException jsonException) {
-                Log.e(TAG, "Erro ao montar payload de erro do enrollFromBase64", jsonException);
+                NeuroLogger.e(TAG, "Erro ao montar payload de erro do enrollFromBase64", jsonException);
             }
             callbackContext.error(errorPayload);
             return false;
@@ -342,7 +341,7 @@ public class Neurotechnology extends CordovaPlugin {
             livenessScore = args.getInt(3);
             isLiveness = args.getBoolean(4);
         } catch (JSONException e) {
-            Log.e(TAG, "Erro ao ler argumentos JSON", e);
+            NeuroLogger.e(TAG, "Erro ao ler argumentos JSON", e);
             // callbackContext.error("Erro ao ler argumentos JSON: " + e.getMessage());
             return;
         }
@@ -354,7 +353,7 @@ public class Neurotechnology extends CordovaPlugin {
         activity.runOnUiThread(() -> {
             activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
             try {
-                Log.d(TAG, "Iniciando câmera na Activity: " + activity.getClass().getName());
+                NeuroLogger.d(TAG, "Iniciando câmera na Activity: " + activity.getClass().getName());
 
                 LayoutInflater inflater = LayoutInflater.from(activity);
                 View view = inflater.inflate(R.layout.activity_main, container, false);
@@ -369,7 +368,7 @@ public class Neurotechnology extends CordovaPlugin {
                 faceOverlayView = view.findViewById(R.id.face_overlay);
 
                 if (textureView == null) {
-                    Log.e(TAG, "textureView está NULL após inflar layout");
+                    NeuroLogger.e(TAG, "textureView está NULL após inflar layout");
                     deliverStartCameraError("textureView está NULL após inflar layout", false);
                     return;
                 }
@@ -391,7 +390,7 @@ public class Neurotechnology extends CordovaPlugin {
                         int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
                         if (rotation != lastKnownRotation) {
                             lastKnownRotation = rotation;
-                            Log.d(TAG, "Nova rotação detectada: " + rotation);
+                            NeuroLogger.d(TAG, "Nova rotação detectada: " + rotation);
 
                             activity.runOnUiThread(() -> {
                                 View view = activity.findViewById(android.R.id.content);
@@ -436,7 +435,7 @@ public class Neurotechnology extends CordovaPlugin {
                 });
 
             } catch (Exception e) {
-                Log.e(TAG, "Erro ao iniciar câmera", e);
+                NeuroLogger.e(TAG, "Erro ao iniciar câmera", e);
                 deliverStartCameraError("Erro ao iniciar câmera: " + e.getMessage(), false);
             }
         });
@@ -460,12 +459,12 @@ public class Neurotechnology extends CordovaPlugin {
 
     private void deliverStartCameraSuccess(String result) {
         if (startCameraCallbackContext == null) {
-            Log.w(TAG, "Tentativa de enviar sucesso da câmera sem callback ativo.");
+            NeuroLogger.w(TAG, "Tentativa de enviar sucesso da câmera sem callback ativo.");
             return;
         }
 
         if (!startCameraResultDelivered.compareAndSet(false, true)) {
-            Log.w(TAG, "Resultado de captura já foi enviado anteriormente. Ignorando novo sucesso.");
+            NeuroLogger.w(TAG, "Resultado de captura já foi enviado anteriormente. Ignorando novo sucesso.");
             return;
         }
 
@@ -475,7 +474,7 @@ public class Neurotechnology extends CordovaPlugin {
 
     private void deliverStartCameraError(String message, boolean keepCallback) {
         if (startCameraCallbackContext == null) {
-            Log.w(TAG, "Tentativa de enviar erro da câmera sem callback ativo: " + message);
+            NeuroLogger.w(TAG, "Tentativa de enviar erro da câmera sem callback ativo: " + message);
             return;
         }
 
@@ -491,7 +490,7 @@ public class Neurotechnology extends CordovaPlugin {
 
     private void deliverStartCameraPluginResult(PluginResult result) {
         if (startCameraCallbackContext == null) {
-            Log.w(TAG, "Tentativa de enviar resultado da câmera sem callback ativo.");
+            NeuroLogger.w(TAG, "Tentativa de enviar resultado da câmera sem callback ativo.");
             return;
         }
 
@@ -604,21 +603,21 @@ public class Neurotechnology extends CordovaPlugin {
     private final TextureView.SurfaceTextureListener surfaceTextureListener = new TextureView.SurfaceTextureListener() {
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-            Log.d(TAG, "onSurfaceTextureAvailable chamado");
+            NeuroLogger.d(TAG, "onSurfaceTextureAvailable chamado");
             neurotechnologyService.setCompletionHandler(new CompletionHandler<NBiometricTask, NBiometricOperation>() {
                 @Override
                 public void completed(NBiometricTask task, NBiometricOperation operation) {
-                    Log.d(TAG, "Processamento concluído.");
+                    NeuroLogger.d(TAG, "Processamento concluído.");
                 }
 
                 @Override
                 public void failed(Throwable throwable, NBiometricOperation operation) {
-                    Log.e(TAG, "Erro no processamento", throwable);
+                    NeuroLogger.e(TAG, "Erro no processamento", throwable);
                 }
             });
 
             if (textureView == null) {
-                Log.e(TAG, "textureView ainda está nulo em onSurfaceTextureAvailable");
+                NeuroLogger.e(TAG, "textureView ainda está nulo em onSurfaceTextureAvailable");
                 return;
             }
 
@@ -648,7 +647,7 @@ public class Neurotechnology extends CordovaPlugin {
                         @Override
                         public void onEvent(String name) {
                             if (eventCallbackContext == null) {
-                                Log.w(TAG, "Evento recebido sem callback registrado: " + name);
+                                NeuroLogger.w(TAG, "Evento recebido sem callback registrado: " + name);
                                 return;
                             }
 
