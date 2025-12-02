@@ -420,6 +420,8 @@ public class Neurotechnology extends CordovaPlugin {
                 btnBack.setOnClickListener(v -> {
                     stopDateTimeUpdates();
 
+                    neurotechnologyService.stopFrameProcessing();
+
                     neurotechnologyService.closeCameraView(activity, textureView, faceOverlayView);
                     // neurotechnologyService.stopBackgroundThread();
 
@@ -704,6 +706,8 @@ public class Neurotechnology extends CordovaPlugin {
         if (orientationEventListener != null) {
             orientationEventListener.disable();
         }
+
+        neurotechnologyService.stopFrameProcessing();
 
         stopDateTimeUpdates();
 

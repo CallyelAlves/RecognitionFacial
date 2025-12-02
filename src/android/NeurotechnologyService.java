@@ -769,7 +769,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), imageFormat, 2);
             mImageReader.setOnImageAvailableListener(reader -> {
 
+                if (!isProcessingFrames) {
+                    Image image = reader.acquireLatestImage();
+                    if (image != null) {
+                        image.close();
+                    }
+                    return;
+                }
+
                 try (Image img = reader.acquireLatestImage()) {
+
+                    if (img == null) {
+                        return;
+                    }
 
                     long currentTime = System.currentTimeMillis();
 
@@ -1293,12 +1305,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
                 FaceFrame data;
                 synchronized (captureLock) {
-                    while (mImageQueue.isEmpty()) {
+                    while (mImageQueue.isEmpty() && isProcessingFrames) {
                         try {
                             captureLock.wait();
                         } catch (InterruptedException e) {
                             NeuroLogger.e(LOG_TAG, "Waiting interrupted", e);
                         }
+                    }
+                    if (!isProcessingFrames) {
+                        NeuroLogger.d("Camera", "Processamento interrompido enquanto aguardava frames.");
+                        return;
                     }
                     data = mImageQueue.remove(0);
                 }
@@ -1506,6 +1522,13 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }).start();
     }
 
+    public void stopFrameProcessing() {
+        isProcessingFrames = false;
+        synchronized (captureLock) {
+            captureLock.notifyAll();
+        }
+    }
+
     private static Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
         if (bitmap == null || bitmap.isRecycled()) {
             NeuroLogger.e(LOG_TAG, "Bitmap nulo ou já reciclado. Não é possível rotacionar.");
@@ -1683,6 +1706,14 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         } catch (Exception e) {
             NeuroLogger.e("Camera", "Erro ao fechar o camera device", e);
         }
+
+        if (mImageReader != null) {
+            mImageReader.close();
+            mImageReader = null;
+            NeuroLogger.d("Camera", "ImageReader fechado");
+        }
+
+        stopBackgroundThread();
     }
 
     private String convertNImageToBase64(NImage image, Callback callback) {
