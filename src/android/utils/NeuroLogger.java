@@ -104,11 +104,12 @@ public final class NeuroLogger {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
             values.put(MediaStore.Downloads.MIME_TYPE, "text/plain");
-            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator);
+            String relativePath = Environment.DIRECTORY_DOWNLOADS + File.separator + "logs" + File.separator;
+            values.put(MediaStore.Downloads.RELATIVE_PATH, relativePath);
             Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             if (uri != null) {
                 logUri = uri;
-                writeLine("INFO", DEFAULT_TAG, "Arquivo de log criado em Downloads: " + fileName, null);
+                writeLine("INFO", DEFAULT_TAG, "Arquivo de log criado em Downloads/logs: " + fileName, null);
             } else {
                 Log.e(DEFAULT_TAG, "NeuroLogger não conseguiu criar arquivo em Downloads via MediaStore");
             }
@@ -119,9 +120,15 @@ public final class NeuroLogger {
     }
 
     private static void createFileInPublicDownloads(String fileName) {
-        File directory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        if (directory == null) {
+        File baseDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        if (baseDirectory == null) {
             Log.e(DEFAULT_TAG, "NeuroLogger não conseguiu resolver a pasta Downloads pública");
+            return;
+        }
+
+        File directory = new File(baseDirectory, "logs");
+        if (directory == null) {
+            Log.e(DEFAULT_TAG, "NeuroLogger não conseguiu resolver a pasta Downloads/logs pública");
             return;
         }
 
@@ -236,4 +243,3 @@ public final class NeuroLogger {
         }
     }
 }
-
