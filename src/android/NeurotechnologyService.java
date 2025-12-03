@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -55,14 +56,15 @@ import androidx.core.app.ActivityCompat;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.Collections;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -132,7 +134,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static volatile Context engineContext;
 
     private final Object captureLock = new Object();
-    private List<FaceFrame> mImageQueue = new ArrayList<>();
+    private final Deque<FaceFrame> mImageQueue = new ArrayDeque<>();
     private NBiometricClient biometricClient;
     private CompletionHandler<NBiometricTask, NBiometricOperation> completionHandler;
     private int frameCount = 0;
@@ -160,7 +162,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private AutoFitTextureView mTextureView;
     private int imageFormat;
     private static final int MAX_PREVIEW_WIDTH = 1920;
-    private static final int MAX_PREVIEW_HEIGHT = 1080;
+    private static final int MAX_PREVIEW_HEIGHT = 1920;
+    private static final int MIN_PREVIEW_WIDTH = 640;
+    private static final int MIN_PREVIEW_HEIGHT = 480;
+    private static final Size DEFAULT_PREVIEW_SIZE = new Size(1280, 720);
+    private static final int IMAGE_READER_MAX_IMAGES = 2;
     private boolean isLandscape = false;
     private List<CameraResolution> availableResolutions = new ArrayList<>();
     private CameraDevice mCameraDevice;
@@ -760,13 +766,31 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     private void createCameraPreviewSession() {
         try {
-            imageFormat = AppSettings.getImageFormat(this.appContext);
+            if (mPreviewSize == null) {
+                NeuroLogger.e(LOG_TAG, "Preview size não definida antes da criação da sessão de captura");
+                return;
+            }
+
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
-            assert texture != null;
+            if (texture == null) {
+                NeuroLogger.e(LOG_TAG, "SurfaceTexture indisponível para criar a sessão de pré-visualização");
+                return;
+            }
             texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
             Surface surface = new Surface(texture);
 
-            mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), imageFormat, 2);
+            int formatForReader = imageFormat;
+            if (formatForReader == ImageFormat.UNKNOWN) {
+                formatForReader = ImageFormat.YUV_420_888;
+                imageFormat = formatForReader;
+                NeuroLogger.w(LOG_TAG, "Formato de imagem indefinido. Aplicando fallback para YUV_420_888.");
+            }
+
+            mImageReader = ImageReader.newInstance(
+                    mPreviewSize.getWidth(),
+                    mPreviewSize.getHeight(),
+                    formatForReader,
+                    IMAGE_READER_MAX_IMAGES);
             mImageReader.setOnImageAvailableListener(reader -> {
 
                 if (!isProcessingFrames) {
@@ -807,11 +831,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 buf3.get(buffer3);
 
                                 synchronized (captureLock) {
-                                    if (mImageQueue.size() > 1) {
-                                        mImageQueue.remove(0);
+                                    if (!mImageQueue.isEmpty()) {
+                                        mImageQueue.pollFirst();
                                     }
                                     FaceFrame faceFrame = new FaceFrame(buffer1, buffer2, buffer3, img.getWidth(), img.getHeight(), img.getWidth() * BYTES_PER_RGB_PIXEL, img.getPlanes()[0].getRowStride(), img.getPlanes()[0].getPixelStride(), img.getPlanes()[1].getRowStride(), img.getPlanes()[1].getPixelStride(), img.getPlanes()[2].getRowStride(), img.getPlanes()[2].getPixelStride());
-                                    mImageQueue.add(faceFrame);
+                                    mImageQueue.addLast(faceFrame);
                                     captureLock.notify();
                                 }
 
@@ -822,12 +846,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 buf1.get(buffer1);
 
                                 synchronized (captureLock) {
-                                    if (mImageQueue.size() > 1) {
-                                        mImageQueue.remove(0);
+                                    if (!mImageQueue.isEmpty()) {
+                                        mImageQueue.pollFirst();
                                     }
 
                                     FaceFrame faceFrame = new FaceFrame(buffer1);
-                                    mImageQueue.add(faceFrame);
+                                    mImageQueue.addLast(faceFrame);
                                     captureLock.notify();
                                 }
                             }
@@ -987,20 +1011,42 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             // Verifica formatos disponíveis
+            int[] outputFormats = map.getOutputFormats();
             int format = -1;
-            for (int size : map.getOutputFormats()) {
-                if (size == imageFormat)
+            for (int candidateFormat : outputFormats) {
+                if (candidateFormat == imageFormat) {
                     format = imageFormat;
+                    break;
+                }
+            }
+
+            if (format == -1) {
+                final int fallbackFormat = ImageFormat.YUV_420_888;
+                for (int candidateFormat : outputFormats) {
+                    if (candidateFormat == fallbackFormat) {
+                        imageFormat = fallbackFormat;
+                        format = fallbackFormat;
+                        NeuroLogger.w(LOG_TAG, "Formato solicitado não suportado. Aplicando fallback YUV_420_888.");
+                        break;
+                    }
+                }
+            }
+
+            if (format == -1) {
+                NeuroLogger.w(LOG_TAG, "Nenhum formato compatível disponível. Recuando para configurações do SurfaceTexture.");
             }
 
             Size[] allSizes;
             if (format == -1) {
                 allSizes = map.getOutputSizes(SurfaceTexture.class);
             } else {
-                allSizes = map.getOutputSizes(imageFormat);
+                allSizes = map.getOutputSizes(format);
             }
 
-            Size largest = Collections.max(Arrays.asList(allSizes), new CompareSizesByArea());
+            if (allSizes == null || allSizes.length == 0) {
+                NeuroLogger.e(LOG_TAG, "Nenhuma resolução disponível retornada pela câmera");
+                return;
+            }
 
             int displayRotation = getDisplayRotation(activity);
             mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
@@ -1042,13 +1088,32 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 maxPreviewHeight = MAX_PREVIEW_HEIGHT;
             }
 
+            Size storedSize = null;
             int[] resolutions = AppSettings.getCamResolution2(activity);
-            if (resolutions[0] == 0 || resolutions[1] == 0) {
-                mPreviewSize = chooseOptimalSize(map, format, width, height);
-                AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            } else {
-                mPreviewSize = chooseOptimalSize(map, format, width, height);
+            if (resolutions[0] >= MIN_PREVIEW_WIDTH && resolutions[1] >= MIN_PREVIEW_HEIGHT) {
+                Size candidate = new Size(resolutions[0], resolutions[1]);
+                if (containsSize(allSizes, candidate) && candidate.getWidth() <= MAX_PREVIEW_WIDTH && candidate.getHeight() <= MAX_PREVIEW_HEIGHT) {
+                    storedSize = candidate;
+                    NeuroLogger.d(LOG_TAG, "Usando resolução persistida " + candidate.getWidth() + "x" + candidate.getHeight());
+                } else {
+                    NeuroLogger.w(LOG_TAG, "Resolução persistida inválida ou acima do limite: " + candidate.getWidth() + "x" + candidate.getHeight());
+                }
+            } else if (resolutions[0] > 0 || resolutions[1] > 0) {
+                NeuroLogger.w(LOG_TAG, "Resolução persistida abaixo do mínimo permitido: " + resolutions[0] + "x" + resolutions[1]);
             }
+
+            if (storedSize != null) {
+                mPreviewSize = storedSize;
+            } else {
+                mPreviewSize = chooseOptimalSize(allSizes, width, height);
+                if (mPreviewSize == null) {
+                    mPreviewSize = DEFAULT_PREVIEW_SIZE;
+                }
+                AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
+            }
+
+            NeuroLogger.i(LOG_TAG, "Preview configurada em " + mPreviewSize.getWidth() + "x" + mPreviewSize.getHeight()
+                    + ", formato " + imageFormat);
 
             initializeAvailableResolutions(allSizes);
             int orientation = activity.getResources().getConfiguration().orientation;
@@ -1090,7 +1155,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private void initializeAvailableResolutions(Size[] choices) {
         availableResolutions = new ArrayList<>();
         for (Size size : choices) {
-            if (size.getWidth() <= MAX_PREVIEW_WIDTH && size.getHeight() <= MAX_PREVIEW_HEIGHT)
+            if (size != null
+                    && size.getWidth() <= MAX_PREVIEW_WIDTH && size.getHeight() <= MAX_PREVIEW_HEIGHT
+                    && size.getWidth() >= MIN_PREVIEW_WIDTH && size.getHeight() >= MIN_PREVIEW_HEIGHT)
                 availableResolutions.add(new CameraResolution(size.getWidth(), size.getHeight()));
         }
     }
@@ -1120,6 +1187,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         this.appContext = context;
         this.currentActivity = activity;
         this.mTextureView = textureView;
+        this.imageFormat = AppSettings.getImageFormat(context);
         startBackgroundCameraThread();
         setUpCameraOutputs(activity, context, width, height, false);
         configureTransform(activity, textureView, width, height);
@@ -1201,27 +1269,84 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         return result;
     }
 
-    private Size chooseOptimalSize(StreamConfigurationMap map, int format, int textureViewWidth, int textureViewHeight) {
-        Size[] choices = null;
-        if(format == -1){
-            choices = map.getOutputSizes(ImageReader.class);
-        }else{
-            choices = map.getOutputSizes(format);
+    private Size chooseOptimalSize(Size[] choices, int textureViewWidth, int textureViewHeight) {
+        if (choices == null || choices.length == 0) {
+            return DEFAULT_PREVIEW_SIZE;
         }
-        double targetRatio = (double) textureViewHeight / textureViewWidth;
 
-        Size optimalSize = choices[0];
-        double minDiff = Double.MAX_VALUE;
+        double targetRatio;
+        if (textureViewWidth > 0 && textureViewHeight > 0) {
+            targetRatio = (double) textureViewWidth / textureViewHeight;
+        } else {
+            targetRatio = (double) DEFAULT_PREVIEW_SIZE.getWidth() / DEFAULT_PREVIEW_SIZE.getHeight();
+        }
+
+        List<Size> preferred = new ArrayList<>();
+        List<Size> fallback = new ArrayList<>();
 
         for (Size option : choices) {
-            double ratio = (double) option.getWidth() / option.getHeight();
-            double diff = Math.abs(ratio - targetRatio);
-            if (diff < minDiff) {
-                minDiff = diff;
-                optimalSize = option;
+            if (option == null) {
+                continue;
+            }
+
+            boolean withinMaxBounds = option.getWidth() <= MAX_PREVIEW_WIDTH && option.getHeight() <= MAX_PREVIEW_HEIGHT;
+            boolean aboveMinBounds = option.getWidth() >= MIN_PREVIEW_WIDTH && option.getHeight() >= MIN_PREVIEW_HEIGHT;
+
+            if (withinMaxBounds && aboveMinBounds) {
+                preferred.add(option);
+            } else if (aboveMinBounds) {
+                fallback.add(option);
             }
         }
-        return optimalSize;
+
+        Size best = findBestSize(preferred, targetRatio);
+        if (best == null) {
+            best = findBestSize(fallback, targetRatio);
+        }
+        if (best == null) {
+            best = findBestSize(Arrays.asList(choices), targetRatio);
+        }
+
+        return best != null ? best : DEFAULT_PREVIEW_SIZE;
+    }
+
+    private boolean containsSize(Size[] sizes, Size target) {
+        if (sizes == null || target == null) {
+            return false;
+        }
+        for (Size option : sizes) {
+            if (option != null && option.getWidth() == target.getWidth() && option.getHeight() == target.getHeight()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Size findBestSize(List<Size> sizes, double targetRatio) {
+        if (sizes == null || sizes.isEmpty()) {
+            return null;
+        }
+
+        Size best = null;
+        double bestRatioDiff = Double.MAX_VALUE;
+        long bestArea = Long.MAX_VALUE;
+
+        for (Size option : sizes) {
+            if (option == null) {
+                continue;
+            }
+            double ratio = (double) option.getWidth() / option.getHeight();
+            double diff = Math.abs(ratio - targetRatio);
+            long area = (long) option.getWidth() * option.getHeight();
+
+            if (best == null || diff < bestRatioDiff || (Math.abs(diff - bestRatioDiff) <= 0.02 && area < bestArea)) {
+                best = option;
+                bestRatioDiff = diff;
+                bestArea = area;
+            }
+        }
+
+        return best;
     }
 
     static class CompareSizesByArea implements Comparator<Size> {
@@ -1316,12 +1441,17 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         NeuroLogger.d("Camera", "Processamento interrompido enquanto aguardava frames.");
                         return;
                     }
-                    data = mImageQueue.remove(0);
+                    data = mImageQueue.pollFirst();
                 }
 
                 if (!isProcessingFrames) {
                     NeuroLogger.d("Camera", "Processamento de frames interrompido.");
                     return;
+                }
+
+                if (data == null) {
+                    NeuroLogger.w(LOG_TAG, "Frame descartado: fila vazia após notificação.");
+                    continue;
                 }
 
                 if (data == null || data.getBuffer1() == null || data.getBuffer1().length == 0) {

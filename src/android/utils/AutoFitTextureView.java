@@ -1,15 +1,15 @@
 package com.cordova.neurotechnology.utils;
 
 import android.content.Context;
+import android.graphics.Matrix;
 import android.util.AttributeSet;
 import android.view.TextureView;
 
 public class AutoFitTextureView extends TextureView {
 
-    private static final String LOG_TAG = AutoFitTextureView.class.getSimpleName();
-
     private int mRatioWidth = 0;
     private int mRatioHeight = 0;
+    private final Matrix transformMatrix = new Matrix();
 
     public AutoFitTextureView(Context context) {
         this(context, null);
@@ -39,12 +39,40 @@ public class AutoFitTextureView extends TextureView {
         int width = MeasureSpec.getSize(widthMeasureSpec);
         int height = MeasureSpec.getSize(heightMeasureSpec);
 
-        if (width == 0 || height == 0) {
-            setMeasuredDimension(width, height);
+        setMeasuredDimension(width, height);
+        applyTransform(width, height);
+    }
+
+    private void applyTransform(int viewWidth, int viewHeight) {
+        if (viewWidth == 0 || viewHeight == 0 || mRatioWidth == 0 || mRatioHeight == 0) {
+            resetTransform();
             return;
         }
 
-        setMeasuredDimension(width, height);
+        float bufferWidth = mRatioWidth;
+        float bufferHeight = mRatioHeight;
+
+        float scaleX = viewWidth / bufferWidth;
+        float scaleY = viewHeight / bufferHeight;
+        float maxScale = Math.max(scaleX, scaleY);
+
+        if (Math.abs(scaleX - scaleY) < 0.001f) {
+            resetTransform();
+            return;
+        }
+
+        float finalScaleX = maxScale / scaleX;
+        float finalScaleY = maxScale / scaleY;
+
+        transformMatrix.reset();
+        float pivotX = viewWidth / 2f;
+        float pivotY = viewHeight / 2f;
+        transformMatrix.postScale(finalScaleX, finalScaleY, pivotX, pivotY);
+        setTransform(transformMatrix);
     }
 
+    private void resetTransform() {
+        transformMatrix.reset();
+        setTransform(null);
+    }
 }
