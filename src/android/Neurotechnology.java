@@ -334,16 +334,22 @@ public class Neurotechnology extends CordovaPlugin {
     }
 
     private void startCamera(JSONArray args, CallbackContext cameraCallbackContext) {
-        try {
-            tempoMinimoEstabilidadeMs = args.getInt(0);
-            limiteMovimentoPermitido = (float) args.getDouble(1);
-            proporcaoMinimaRosto = (float) args.getDouble(2);
-            livenessScore = args.getInt(3);
-            isLiveness = args.getBoolean(4);
-        } catch (JSONException e) {
-            NeuroLogger.e(TAG, "Erro ao ler argumentos JSON", e);
-            // callbackContext.error("Erro ao ler argumentos JSON: " + e.getMessage());
-            return;
+        tempoMinimoEstabilidadeMs = 120;
+        limiteMovimentoPermitido = 0.3f;
+        proporcaoMinimaRosto = 0.20f;
+        livenessScore = 95;
+        isLiveness = true;
+
+        if (args != null) {
+            try {
+                tempoMinimoEstabilidadeMs = args.optInt(0, tempoMinimoEstabilidadeMs);
+                limiteMovimentoPermitido = (float) args.optDouble(1, limiteMovimentoPermitido);
+                proporcaoMinimaRosto = (float) args.optDouble(2, proporcaoMinimaRosto);
+                livenessScore = args.optInt(3, livenessScore);
+                isLiveness = args.optBoolean(4, isLiveness);
+            } catch (Exception e) {
+                NeuroLogger.w(TAG, "Usando valores padrão para startCamera devido a argumentos inválidos", e);
+            }
         }
         this.activity = cordova.getActivity();
         this.startCameraCallbackContext = cameraCallbackContext;
@@ -705,6 +711,7 @@ public class Neurotechnology extends CordovaPlugin {
     public void closeCameraView() {
         if (orientationEventListener != null) {
             orientationEventListener.disable();
+            orientationEventListener = null;
         }
 
         neurotechnologyService.stopFrameProcessing();
