@@ -1066,7 +1066,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
             Point displaySize = getDisplaySize(activity);
 
-            int maxResolution = 1280;
+            int maxResolution = 960;
 
             int displayLong = Math.max(displaySize.x, displaySize.y);
             int displayShort = Math.min(displaySize.x, displaySize.y);
@@ -1253,28 +1253,37 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             return DEFAULT_PREVIEW_SIZE;
         }
 
-        double targetRatio;
-        // if (textureViewWidth > 0 && textureViewHeight > 0) {
-        //     targetRatio = (double) textureViewWidth / textureViewHeight;
-        // } else {
-        // }
-        targetRatio = (double) DEFAULT_PREVIEW_SIZE.getWidth() / DEFAULT_PREVIEW_SIZE.getHeight();
+        double targetRatio = (double) DEFAULT_PREVIEW_SIZE.getWidth() / DEFAULT_PREVIEW_SIZE.getHeight();
+        int targetMaxDimension = 960; // Sempre buscar resolução próxima a 960px
 
-        List<Size> preferred = new ArrayList<>();
-        List<Size> fallback = new ArrayList<>();
+        Size best = null;
+        double bestRatioDiff = Double.MAX_VALUE;
+        int bestDimensionDiff = Integer.MAX_VALUE;
 
         for (Size option : choices) {
             if (option == null) {
                 continue;
             }
-        }
+            
+            int optionMaxDim = Math.max(option.getWidth(), option.getHeight());
+            
+            // Ignora resoluções muito maiores que o target (acima de 1.5x)
+            if (optionMaxDim > targetMaxDimension * 1.5) {
+                continue;
+            }
+            
+            double ratio = (double) option.getWidth() / option.getHeight();
+            double ratioDiff = Math.abs(ratio - targetRatio);
+            int dimensionDiff = Math.abs(optionMaxDim - targetMaxDimension);
 
-        Size best = findBestSize(preferred, targetRatio);
-        if (best == null) {
-            best = findBestSize(fallback, targetRatio);
-        }
-        if (best == null) {
-            best = findBestSize(Arrays.asList(choices), targetRatio);
+            // Prioriza: 1) Aspect ratio similar, 2) Dimensão mais próxima de 960px
+            if (best == null || 
+                ratioDiff < bestRatioDiff || 
+                (Math.abs(ratioDiff - bestRatioDiff) <= 0.02 && dimensionDiff < bestDimensionDiff)) {
+                best = option;
+                bestRatioDiff = ratioDiff;
+                bestDimensionDiff = dimensionDiff;
+            }
         }
 
         return best != null ? best : DEFAULT_PREVIEW_SIZE;
@@ -1299,7 +1308,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
         Size best = null;
         double bestRatioDiff = Double.MAX_VALUE;
-        long bestArea = Long.MAX_VALUE;
+        long bestArea = 0;
 
         for (Size option : sizes) {
             if (option == null) {
@@ -1309,7 +1318,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             double diff = Math.abs(ratio - targetRatio);
             long area = (long) option.getWidth() * option.getHeight();
 
-            if (best == null || diff < bestRatioDiff || (Math.abs(diff - bestRatioDiff) <= 0.02 && area < bestArea)) {
+            // Prioriza melhor aspect ratio, mas se similar (diff < 0.02), prefere MAIOR área
+            if (best == null || diff < bestRatioDiff || (Math.abs(diff - bestRatioDiff) <= 0.02 && area > bestArea)) {
                 best = option;
                 bestRatioDiff = diff;
                 bestArea = area;
