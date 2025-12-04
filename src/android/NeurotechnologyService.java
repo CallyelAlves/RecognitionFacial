@@ -161,11 +161,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private Handler mBackgroundCameraHandler;
     private AutoFitTextureView mTextureView;
     private int imageFormat;
-    private static final int MAX_PREVIEW_WIDTH = 1920;
-    private static final int MAX_PREVIEW_HEIGHT = 1920;
-    private static final int MIN_PREVIEW_WIDTH = 640;
-    private static final int MIN_PREVIEW_HEIGHT = 480;
-    private static final Size DEFAULT_PREVIEW_SIZE = new Size(1280, 720);
+
+    private Size DEFAULT_PREVIEW_SIZE = new Size(1280, 720);
     private static final int IMAGE_READER_MAX_IMAGES = 2;
     private boolean isLandscape = false;
     private List<CameraResolution> availableResolutions = new ArrayList<>();
@@ -1068,6 +1065,17 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }
 
             Point displaySize = getDisplaySize(activity);
+
+            int maxResolution = 1280;
+
+            int displayLong = Math.max(displaySize.x, displaySize.y);
+            int displayShort = Math.min(displaySize.x, displaySize.y);
+
+            int defaultWidth = maxResolution;
+            int defaultHeight = Math.round((float) maxResolution * displayShort / displayLong);
+
+            DEFAULT_PREVIEW_SIZE = new Size(defaultWidth, defaultHeight);
+
             int rotatedPreviewWidth = width;
             int rotatedPreviewHeight = height;
             int maxPreviewWidth = displaySize.x;
@@ -1079,38 +1087,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 maxPreviewWidth = displaySize.y;
                 maxPreviewHeight = displaySize.x;
             }
-
-            if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
-                maxPreviewWidth = MAX_PREVIEW_WIDTH;
+            mPreviewSize = chooseOptimalSize(allSizes, width, height);
+            if (mPreviewSize == null) {
+                mPreviewSize = DEFAULT_PREVIEW_SIZE;
             }
-
-            if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
-                maxPreviewHeight = MAX_PREVIEW_HEIGHT;
-            }
-
-            Size storedSize = null;
-            int[] resolutions = AppSettings.getCamResolution2(activity);
-            if (resolutions[0] >= MIN_PREVIEW_WIDTH && resolutions[1] >= MIN_PREVIEW_HEIGHT) {
-                Size candidate = new Size(resolutions[0], resolutions[1]);
-                if (containsSize(allSizes, candidate) && candidate.getWidth() <= MAX_PREVIEW_WIDTH && candidate.getHeight() <= MAX_PREVIEW_HEIGHT) {
-                    storedSize = candidate;
-                    NeuroLogger.d(LOG_TAG, "Usando resolução persistida " + candidate.getWidth() + "x" + candidate.getHeight());
-                } else {
-                    NeuroLogger.w(LOG_TAG, "Resolução persistida inválida ou acima do limite: " + candidate.getWidth() + "x" + candidate.getHeight());
-                }
-            } else if (resolutions[0] > 0 || resolutions[1] > 0) {
-                NeuroLogger.w(LOG_TAG, "Resolução persistida abaixo do mínimo permitido: " + resolutions[0] + "x" + resolutions[1]);
-            }
-
-            if (storedSize != null) {
-                mPreviewSize = storedSize;
-            } else {
-                mPreviewSize = chooseOptimalSize(allSizes, width, height);
-                if (mPreviewSize == null) {
-                    mPreviewSize = DEFAULT_PREVIEW_SIZE;
-                }
-                AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            }
+            AppSettings.setCameraResolution2(activity, mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
             NeuroLogger.i(LOG_TAG, "Preview configurada em " + mPreviewSize.getWidth() + "x" + mPreviewSize.getHeight()
                     + ", formato " + imageFormat);
@@ -1155,9 +1136,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private void initializeAvailableResolutions(Size[] choices) {
         availableResolutions = new ArrayList<>();
         for (Size size : choices) {
-            if (size != null
-                    && size.getWidth() <= MAX_PREVIEW_WIDTH && size.getHeight() <= MAX_PREVIEW_HEIGHT
-                    && size.getWidth() >= MIN_PREVIEW_WIDTH && size.getHeight() >= MIN_PREVIEW_HEIGHT)
+            if (size != null)
                 availableResolutions.add(new CameraResolution(size.getWidth(), size.getHeight()));
         }
     }
@@ -1275,11 +1254,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
 
         double targetRatio;
-        if (textureViewWidth > 0 && textureViewHeight > 0) {
-            targetRatio = (double) textureViewWidth / textureViewHeight;
-        } else {
-            targetRatio = (double) DEFAULT_PREVIEW_SIZE.getWidth() / DEFAULT_PREVIEW_SIZE.getHeight();
-        }
+        // if (textureViewWidth > 0 && textureViewHeight > 0) {
+        //     targetRatio = (double) textureViewWidth / textureViewHeight;
+        // } else {
+        // }
+        targetRatio = (double) DEFAULT_PREVIEW_SIZE.getWidth() / DEFAULT_PREVIEW_SIZE.getHeight();
 
         List<Size> preferred = new ArrayList<>();
         List<Size> fallback = new ArrayList<>();
@@ -1287,15 +1266,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         for (Size option : choices) {
             if (option == null) {
                 continue;
-            }
-
-            boolean withinMaxBounds = option.getWidth() <= MAX_PREVIEW_WIDTH && option.getHeight() <= MAX_PREVIEW_HEIGHT;
-            boolean aboveMinBounds = option.getWidth() >= MIN_PREVIEW_WIDTH && option.getHeight() >= MIN_PREVIEW_HEIGHT;
-
-            if (withinMaxBounds && aboveMinBounds) {
-                preferred.add(option);
-            } else if (aboveMinBounds) {
-                fallback.add(option);
             }
         }
 
@@ -1562,22 +1532,72 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 faceOverlayView.setBorderColor(Color.GREEN);
                             });
 
-                            String base64Image = convertNImageToBase64(image, callback);
+                            FaceFrame freshData = null;
+                            synchronized (captureLock) {
+                                mImageQueue.clear();
+                                while (mImageQueue.isEmpty() && isProcessingFrames) {
+                                    try {
+                                        captureLock.wait();
+                                    } catch (InterruptedException e) {
+                                        NeuroLogger.e(LOG_TAG, "Frame interrompido", e);
+                                    }
+                                }
+                                freshData = mImageQueue.pollFirst();
+                            }
 
-                            if (base64Image == null) {
+                            if (freshData != null) {
+                                NImage freshImage = null;
+                                NBuffer freshBuffer1 = null;
+                                NBuffer freshBuffer2 = null;
+                                NBuffer freshBuffer3 = null;
+
+                                try {
+                                    boolean freshUseYUV = freshData.getBuffer2() != null && freshData.getBuffer3() != null;
+
+                                    if (freshUseYUV) {
+                                        freshImage = NImage.create(NPixelFormat.RGB_8U, freshData.getWidth(), freshData.getHeight(), freshData.getStride());
+                                        freshBuffer1 = new NBuffer(freshData.getBuffer1());
+                                        freshBuffer2 = new NBuffer(freshData.getBuffer2());
+                                        freshBuffer3 = new NBuffer(freshData.getBuffer3());
+                                        freshImage.copyFromYCbCrData(
+                                                freshBuffer1, freshData.getRowStride1(), freshData.getPixelStride1(),
+                                                freshBuffer2, freshData.getRowStride2(), freshData.getPixelStride2(),
+                                                freshBuffer3, freshData.getRowStride3(), freshData.getPixelStride3()
+                                        );
+                                    } else {
+                                        freshBuffer1 = new NBuffer(freshData.getBuffer1());
+                                        freshImage = NImage.fromMemory(freshBuffer1, NImageFormat.getJPEG());
+                                    }
+
+                                    String base64Image = convertNImageToBase64(freshImage, callback);
+
+                                    if (base64Image == null) {
+                                        faceDetectedStartTime[0] = 0;
+                                        continue;
+                                    }
+
+                                    if (hasSentCaptureResult.compareAndSet(false, true)) {
+                                        isProcessingFrames = false;
+                                        NeuroLogger.i(LOG_TAG, "Foto capturada com sucesso!");
+                                        callback.onSuccess(base64Image);
+                                    } else {
+                                        isProcessingFrames = false;
+                                        NeuroLogger.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
+                                    }
+                                    return;
+
+                                } catch (Exception e) {
+                                    NeuroLogger.e(LOG_TAG, "Erro ao processar frame fresco", e);
+                                } finally {
+                                    if (freshImage != null) freshImage.dispose();
+                                    if (freshBuffer1 != null) freshBuffer1.dispose();
+                                    if (freshBuffer2 != null) freshBuffer2.dispose();
+                                    if (freshBuffer3 != null) freshBuffer3.dispose();
+                                }
+                            } else {
                                 faceDetectedStartTime[0] = 0;
                                 continue;
                             }
-
-                            if (hasSentCaptureResult.compareAndSet(false, true)) {
-                                isProcessingFrames = false;
-                                NeuroLogger.i(LOG_TAG, "Foto capturada com sucesso!");
-                                callback.onSuccess(base64Image);
-                            } else {
-                                isProcessingFrames = false;
-                                NeuroLogger.w(LOG_TAG, "Resultado de captura já enviado, ignorando frame duplicado.");
-                            }
-                            return;
                         }
                     } else {
                         NeuroLogger.e(LOG_TAG, "Nenhum objeto facial detectado.");
