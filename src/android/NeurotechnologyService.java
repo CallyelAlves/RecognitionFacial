@@ -1496,7 +1496,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         if (faceRatio < minimumFaceProportion) {
                             activity.runOnUiThread(() -> {
                                 statusTextView.setText("Aproxime o rosto");
-                                faceOverlayView.setBorderColor(Color.YELLOW);
+                                if (faceOverlayView != null) {
+                                    faceOverlayView.setBorderColor(Color.YELLOW);
+                                }
                             });
                             NeuroLogger.d("FaceDetection", "Rosto muito distante da câmera. Ignorando frame.");
                             continue;
@@ -1510,7 +1512,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 faceDetectedStartTime[0] = 0;
                                 activity.runOnUiThread(() -> {
                                     statusTextView.setText("Mantenha o rosto estável");
-                                    faceOverlayView.setBorderColor(Color.YELLOW);
+                                    if (faceOverlayView != null) {
+                                        faceOverlayView.setBorderColor(Color.YELLOW);
+                                    }
                                 });
                             }
                         }
@@ -1521,7 +1525,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                             faceDetectedStartTime[0] = System.currentTimeMillis();
                             activity.runOnUiThread(() -> {
                                 statusTextView.setText("Aguardando estabilidade...");
-                                faceOverlayView.setBorderColor(Color.YELLOW);
+                                statusTextView.setTextColor(Color.YELLOW);
+                                if (faceOverlayView != null) {
+                                    faceOverlayView.setBorderColor(Color.YELLOW);
+                                }
                             });
                         }
 
@@ -1529,7 +1536,10 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         if (duration >= stabilityTimeMs) {
                             activity.runOnUiThread(() -> {
                                 statusTextView.setText("Capturando imagem...");
-                                faceOverlayView.setBorderColor(Color.GREEN);
+                                statusTextView.setTextColor(Color.GREEN);
+                                if (faceOverlayView != null) {
+                                    faceOverlayView.setBorderColor(Color.GREEN);
+                                }
                             });
 
                             FaceFrame freshData = null;
@@ -1606,7 +1616,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                     ? "Rosto não detectado. LivenessScore: " + livenessScore
                                     : "Rosto não detectado";
                             statusTextView.setText(message);
-                            faceOverlayView.setBorderColor(Color.RED);
+                            if (faceOverlayView != null) {
+                                faceOverlayView.setBorderColor(Color.RED);
+                            }
                         });
                         faceDetectedStartTime[0] = 0;
                     }
@@ -1624,7 +1636,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 default: msg = "Ajuste seu rosto no enquadramento"; break;
                             }
                             statusTextView.setText(msg);
-                            faceOverlayView.setBorderColor(Color.RED);
+                            if (faceOverlayView != null) {
+                                faceOverlayView.setBorderColor(Color.RED);
+                            }
                             if (st != null && st != NBiometricStatus.OK && st != lastReportedStatus[0]) {
                                 lastReportedStatus[0] = st;
                                 reportStatusChange(callback, st, msg);
@@ -1673,10 +1687,20 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     }
 
     public void stopFrameProcessing() {
+        NeuroLogger.d(LOG_TAG, "Parando processamento de frames...");
         isProcessingFrames = false;
+        
         synchronized (captureLock) {
+            // Limpa a fila de frames para liberar memória
+            if (!mImageQueue.isEmpty()) {
+                NeuroLogger.d(LOG_TAG, "Limpando " + mImageQueue.size() + " frames da fila");
+                mImageQueue.clear();
+            }
+            // Notifica todas as threads aguardando
             captureLock.notifyAll();
         }
+        
+        NeuroLogger.d(LOG_TAG, "Processamento de frames parado e buffers limpos");
     }
 
     private static Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
@@ -1760,8 +1784,6 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             try {
                 if (textureView != null) {
                     textureView.setVisibility(View.GONE);
-                }
-                if (textureView != null) {
                     textureView.setSurfaceTextureListener(null);
                     SurfaceTexture surface = textureView.getSurfaceTexture();
                     if (surface != null) {
@@ -1769,7 +1791,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     }
                     ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
                     rootView.removeView(textureView);
-                    rootView.removeView(faceOverlayView);
+                    if (faceOverlayView != null) {
+                        rootView.removeView(faceOverlayView);
+                    }
                 }
                 if (faceOverlayView != null) {
                     faceOverlayView.setVisibility(View.GONE);
@@ -1840,8 +1864,25 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public void closeCamera() {
         NeuroLogger.d("Camera", "Fechando câmera...");
+        
+        // Para o processamento de frames primeiro
+        stopFrameProcessing();
+        
+        // Limpa a fila de imagens novamente para garantir
+        synchronized (captureLock) {
+            if (!mImageQueue.isEmpty()) {
+                NeuroLogger.d("Camera", "Limpando " + mImageQueue.size() + " frames remanescentes");
+                mImageQueue.clear();
+            }
+        }
 
         if (mCaptureSession != null) {
+            try {
+                mCaptureSession.stopRepeating();
+                NeuroLogger.d("Camera", "Capture session repeating parado");
+            } catch (Exception e) {
+                NeuroLogger.e("Camera", "Erro ao parar repeating da capture session", e);
+            }
             mCaptureSession.close();
             mCaptureSession = null;
             NeuroLogger.d("Camera", "Capture session fechada");
@@ -1864,6 +1905,8 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         }
 
         stopBackgroundThread();
+        
+        NeuroLogger.i("Camera", "Câmera completamente fechada e todos os buffers liberados");
     }
 
     private String convertNImageToBase64(NImage image, Callback callback) {

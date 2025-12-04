@@ -82,6 +82,7 @@ public class Neurotechnology extends CordovaPlugin {
     private float proporcaoMinimaRosto;
     private int livenessScore;
     private Boolean isLiveness;
+    private Boolean isOval;
     private CallbackContext eventCallbackContext;
     private final AtomicBoolean startCameraResultDelivered = new AtomicBoolean(false);
 
@@ -339,6 +340,7 @@ public class Neurotechnology extends CordovaPlugin {
         proporcaoMinimaRosto = 0.20f;
         livenessScore = 95;
         isLiveness = true;
+        isOval = true;
 
         if (args != null) {
             try {
@@ -347,6 +349,7 @@ public class Neurotechnology extends CordovaPlugin {
                 proporcaoMinimaRosto = (float) args.optDouble(2, proporcaoMinimaRosto);
                 livenessScore = args.optInt(3, livenessScore);
                 isLiveness = args.optBoolean(4, isLiveness);
+                isOval = args.optBoolean(5, isOval);
             } catch (Exception e) {
                 NeuroLogger.w(TAG, "Usando valores padrão para startCamera devido a argumentos inválidos", e);
             }
@@ -386,9 +389,6 @@ public class Neurotechnology extends CordovaPlugin {
                     textureView.setLayoutParams(textureParams);
                 }
 
-                view.post(() -> configureFaceOverlay(view));
-
-                // configureFaceOverlay(view);
                 // Detectar mudança de rotação
                 orientationEventListener = new OrientationEventListener(activity, SensorManager.SENSOR_DELAY_NORMAL) {
                     @Override
@@ -399,8 +399,10 @@ public class Neurotechnology extends CordovaPlugin {
                             NeuroLogger.d(TAG, "Nova rotação detectada: " + rotation);
 
                             activity.runOnUiThread(() -> {
-                                View view = activity.findViewById(android.R.id.content);
-                                configureFaceOverlay(view); // Recalcula a oval com base na nova rotação
+                                if (isOval && faceOverlayView != null) {
+                                    View view = activity.findViewById(android.R.id.content);
+                                    configureFaceOverlay(view);
+                                }
                                 updateDateTimeContainerLayout(activity.getResources().getConfiguration().orientation);
                                 neurotechnologyService.configureTransform(activity, textureView, textureView.getWidth(), textureView.getHeight());
                             });
@@ -420,6 +422,22 @@ public class Neurotechnology extends CordovaPlugin {
                 timeTextView = view.findViewById(R.id.time_text_view);
 
                 updateDateTimeContainerLayout(activity.getResources().getConfiguration().orientation);
+
+                // Configurar visibilidade baseado em isOval
+                if (isOval) {
+                    // Modo oval: remove fundo do container, exibe oval
+                    dateTimeContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    if (faceOverlayView != null) {
+                        faceOverlayView.setVisibility(View.VISIBLE);
+                        configureFaceOverlay(view);
+                    }
+                } else {
+                    // Modo sem oval: mantém fundo, oculta oval
+                    dateTimeContainer.setBackgroundColor(android.graphics.Color.parseColor("#88000000"));
+                    if (faceOverlayView != null) {
+                        faceOverlayView.setVisibility(View.GONE);
+                    }
+                }
 
                 startDateTimeUpdates();
 
@@ -629,7 +647,6 @@ public class Neurotechnology extends CordovaPlugin {
                 return;
             }
 
-            // neurotechnologyService.startFrameProcessing(textureView, faceOverlayView);
             neurotechnologyService.openCamera(activity, context, textureView, width, height);
             neurotechnologyService.processCameraFrames(activity, textureView, faceOverlayView, statusTextView,
                     tempoMinimoEstabilidadeMs, limiteMovimentoPermitido, proporcaoMinimaRosto, livenessScore, isLiveness,
@@ -731,6 +748,9 @@ public class Neurotechnology extends CordovaPlugin {
         currentActivity.runOnUiThread(() -> {
             if (btnBack != null) {
                 btnBack.setVisibility(View.GONE);
+            }
+            if (dateTimeContainer != null) {
+                dateTimeContainer.setVisibility(View.GONE);
             }
             if (statusTextView != null) {
                 statusTextView.setVisibility(View.GONE);
