@@ -691,7 +691,13 @@ public class Neurotechnology extends CordovaPlugin {
 
         @Override
         public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-            return true;
+            NeuroLogger.d(TAG, "onSurfaceTextureDestroyed chamado");
+            // Garante que a câmera e seus buffers (ImageReader, Surfaces, thread)
+            // sejam fechados mesmo se o WebView/Activity forem destruídos sem
+            // passar explicitamente por closeCamera.
+            neurotechnologyService.closeCamera();
+            // Retorna false para permitir que o sistema libere o SurfaceTexture.
+            return false;
         }
 
         @Override
@@ -765,6 +771,9 @@ public class Neurotechnology extends CordovaPlugin {
                 timeTextView.setVisibility(View.GONE);
             }
             neurotechnologyService.closeCameraView(currentActivity, textureView, faceOverlayView);
+            textureView = null;
+            faceOverlayView = null;
+            btnBack = null;
             dateTextView = null;
             weekTextView = null;
             timeTextView = null;
@@ -777,6 +786,7 @@ public class Neurotechnology extends CordovaPlugin {
     public void onDestroy() {
         super.onDestroy();
         stopDateTimeUpdates();
-        neurotechnologyService.stopBackgroundThread();
+        // Garante que a câmera e recursos gráficos sejam liberados
+        neurotechnologyService.closeCamera();
     }
 }

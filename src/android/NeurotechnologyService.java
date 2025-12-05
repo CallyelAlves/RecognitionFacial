@@ -168,6 +168,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private List<CameraResolution> availableResolutions = new ArrayList<>();
     private CameraDevice mCameraDevice;
     private ImageReader mImageReader;
+    private Surface mPreviewSurface;
     private long lastFrameProcessed = 0;
     private State mState = State.CAPTURING;
     private enum State {
@@ -663,19 +664,40 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public static String[] identifyFace(String base64Image) {
         String[] identifiedUsers = null;
-        byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
-        NImage image = NImage.fromMemory(new NBuffer(decodedBytes));
+        NBuffer buffer = null;
+        NImage image = null;
+        NFace face = null;
+        NSubject extractSubject = null;
 
-        if (image != null) {
-            NFace face = engine.detectFaces(image);
-            if (face.getObjects().size() > 0) {
-                NSubject extractSubject = new NSubject();
-                extractSubject.getFaces().add(face);
-                List<NeurotechnologyServiceResluts> results = NeurotechnologyService.identify(extractSubject);
+        try {
+            byte[] decodedBytes = Base64.decode(base64Image, Base64.DEFAULT);
+            buffer = new NBuffer(decodedBytes);
+            image = NImage.fromMemory(buffer);
 
-                if (!results.isEmpty() && results.size() == 1
-                        && results.get(0).getAuthenticationError() != AuthenticationError.OK) {  }
-                identifiedUsers = prepareIdentifiedUsers(results);
+            if (image != null) {
+                face = engine.detectFaces(image);
+                if (face != null && face.getObjects().size() > 0) {
+                    extractSubject = new NSubject();
+                    extractSubject.getFaces().add(face);
+                    List<NeurotechnologyServiceResluts> results = NeurotechnologyService.identify(extractSubject);
+
+                    if (!results.isEmpty() && results.size() == 1
+                            && results.get(0).getAuthenticationError() != AuthenticationError.OK) {  }
+                    identifiedUsers = prepareIdentifiedUsers(results);
+                }
+            }
+        } finally {
+            if (extractSubject != null) {
+                extractSubject.dispose();
+            }
+            if (face != null) {
+                face.dispose();
+            }
+            if (image != null) {
+                image.dispose();
+            }
+            if (buffer != null) {
+                buffer.dispose();
             }
         }
         return identifiedUsers;
@@ -774,7 +796,19 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                 return;
             }
             texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            Surface surface = new Surface(texture);
+
+            // Garante que não manteremos Surfaces antigos vivos entre ciclos
+            // de abertura/fechamento da câmera.
+            if (mPreviewSurface != null) {
+                try {
+                    mPreviewSurface.release();
+                    NeuroLogger.d(LOG_TAG, "Preview Surface anterior liberado");
+                } catch (Exception e) {
+                    NeuroLogger.e(LOG_TAG, "Erro ao liberar preview Surface anterior", e);
+                }
+                mPreviewSurface = null;
+            }
+            mPreviewSurface = new Surface(texture);
 
             int formatForReader = imageFormat;
             if (formatForReader == ImageFormat.UNKNOWN) {
@@ -860,11 +894,11 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             }, mBackgroundCameraHandler);
 
             mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            mPreviewRequestBuilder.addTarget(surface);
+            mPreviewRequestBuilder.addTarget(mPreviewSurface);
             mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
 
             if (mCameraDevice != null) {
-                createCameraCaptureSession(surface);
+                createCameraCaptureSession(mPreviewSurface);
             }
 
         } catch (CameraAccessException e) {
@@ -1197,15 +1231,17 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         @Override
         public void onDisconnected(@NonNull CameraDevice cameraDevice) {
             mCameraOpenCloseLock.release();
-            cameraDevice.close();
-            mCameraDevice = null;
+            // Quando a câmera é desconectada pelo sistema, garante que
+            // toda a pilha de captura seja encerrada e os buffers liberados.
+            closeCamera();
         }
 
         @Override
         public void onError(@NonNull CameraDevice cameraDevice, int error) {
             mCameraOpenCloseLock.release();
-            cameraDevice.close();
-            mCameraDevice = null;
+            // Em caso de erro, fecha completamente a câmera para evitar
+            // vazamento de Surface/ImageReader/HandlerThread.
+            closeCamera();
         }
     };
 
@@ -1770,14 +1806,24 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
 
     public void stopBackgroundThread() {
         if (mBackgroundCameraHandler != null) {
-            mBackgroundCameraHandler.getLooper().quitSafely();
+            try {
+                mBackgroundCameraHandler.getLooper().quitSafely();
+            } catch (Exception e) {
+                NeuroLogger.e("NeurotechnologyService", "Erro ao encerrar looper da camera", e);
+            }
             mBackgroundCameraHandler = null;
         }
-        if (mBackgroundCameraThread != null) {
-            mBackgroundCameraThread.quitSafely();
+
+        HandlerThread thread = mBackgroundCameraThread;
+        mBackgroundCameraThread = null;
+
+        if (thread != null) {
             try {
-                mBackgroundCameraThread.join();
-                mBackgroundCameraThread = null;
+                thread.quitSafely();
+                // Evita deadlock ao chamar join() a partir da própria thread.
+                if (Thread.currentThread() != thread) {
+                    thread.join();
+                }
             } catch (InterruptedException e) {
                 NeuroLogger.e("NeurotechnologyService", "Erro ao parar a thread de fundo", e);
             }
@@ -1799,10 +1845,15 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                     if (surface != null) {
                         surface.release();
                     }
-                    ViewGroup rootView = (ViewGroup) activity.findViewById(android.R.id.content);
-                    rootView.removeView(textureView);
+                    android.view.ViewParent parent = textureView.getParent();
+                    if (parent instanceof ViewGroup) {
+                        ((ViewGroup) parent).removeView(textureView);
+                    }
                     if (faceOverlayView != null) {
-                        rootView.removeView(faceOverlayView);
+                        android.view.ViewParent overlayParent = faceOverlayView.getParent();
+                        if (overlayParent instanceof ViewGroup) {
+                            ((ViewGroup) overlayParent).removeView(faceOverlayView);
+                        }
                     }
                 }
                 if (faceOverlayView != null) {
@@ -1912,6 +1963,16 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
             mImageReader.close();
             mImageReader = null;
             NeuroLogger.d("Camera", "ImageReader fechado");
+        }
+
+        if (mPreviewSurface != null) {
+            try {
+                mPreviewSurface.release();
+                NeuroLogger.d("Camera", "Preview Surface liberado");
+            } catch (Exception e) {
+                NeuroLogger.e("Camera", "Erro ao liberar preview Surface", e);
+            }
+            mPreviewSurface = null;
         }
 
         stopBackgroundThread();
