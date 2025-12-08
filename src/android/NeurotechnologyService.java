@@ -185,6 +185,7 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
     private static List<String> deactivationIDToken = new ArrayList<>();
     private static Rect lastCapturedFaceRect = null;
     private final AtomicBoolean hasSentCaptureResult = new AtomicBoolean(false);
+    private boolean faceDetectedInPreviousFrame = false;
 
     public static void initializeLicense(Context context, JSONArray args, CallbackContext callbackContext) {
         try {
@@ -1588,6 +1589,12 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                                 }
                             });
 
+
+                            // Emitir evento de rosto detectado
+                            if (!faceDetectedInPreviousFrame) {
+                                faceDetectedInPreviousFrame = true;
+                                callback.onEvent("{\"type\": \"face_detected\", \"message\": \"Rosto detectado e estável\"}");
+                            }
                             FaceFrame freshData = null;
                             synchronized (captureLock) {
                                 mImageQueue.clear();
@@ -1668,10 +1675,22 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
                         });
                         faceDetectedStartTime[0] = 0;
                     }
+
+                        // Emitir evento de rosto perdido
+                        if (faceDetectedInPreviousFrame) {
+                            faceDetectedInPreviousFrame = false;
+                            callback.onEvent("{\"type\": \"face_lost\", \"message\": \"Rosto não detectado\"}");
+                        }
                     } else {
                         NBiometricStatus st = status;
                         // NeuroLogger.e(LOG_TAG, "Reconhecimento não OK: " + st);
                         faceDetectedStartTime[0] = 0;
+
+                        // Emitir evento de rosto perdido por status inválido
+                        if (faceDetectedInPreviousFrame) {
+                            faceDetectedInPreviousFrame = false;
+                            callback.onEvent("{\"type\": \"face_lost\", \"message\": \"Rosto perdido - status inválido\"}");
+                        }
                         activity.runOnUiThread(() -> {
                             String msg;
                             switch (st) {
@@ -1928,6 +1947,9 @@ public class NeurotechnologyService implements LicensingManager.LicensingStateCa
         
         // Para o processamento de frames primeiro
         stopFrameProcessing();
+        
+        // Resetar flag de detecção de rosto
+        faceDetectedInPreviousFrame = false;
         
         // Limpa a fila de imagens novamente para garantir
         synchronized (captureLock) {
